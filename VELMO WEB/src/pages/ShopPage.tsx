@@ -59,9 +59,9 @@ export default function ShopPage() {
     }, [slug]);
 
     // Helpers
-    const formatPrice = (price: number | null | undefined, currency: string) => {
+    const formatPrice = (price: number | null | undefined) => {
         if (!price || isNaN(price) || price === 0) return "Prix sur demande";
-        return `${price.toLocaleString()} ${currency}`;
+        return `${price.toLocaleString()} GNF`;
     };
 
     const categories = ['Tout', ...new Set(products.map(p => p.category).filter(Boolean))];
@@ -143,7 +143,7 @@ export default function ShopPage() {
     };
 
 
-    const totalAmount = cart.reduce((acc, item) => acc + ((item.product.price || 0) * item.quantity), 0);
+    const totalAmount = cart.reduce((acc, item) => acc + ((item.product.price_sale || 0) * item.quantity), 0);
     const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
     const handleSubmitOrder = async (e: FormEvent) => {
@@ -159,7 +159,7 @@ export default function ShopPage() {
                     items: cart.map(item => ({
                         id: item.product.id,
                         name: item.product.name,
-                        price: item.product.price || 0,
+                        price: item.product.price_sale || 0,
                         quantity: item.quantity
                     })),
                     total_amount: totalAmount,
@@ -203,6 +203,22 @@ export default function ShopPage() {
 
     return (
         <div className="container">
+            {/* ✨ Golden Particles Background */}
+            <div className="particles-container">
+                {[...Array(15)].map((_, i) => (
+                    <div
+                        key={i}
+                        className={`particle ${i % 3 === 0 ? 'glow' : ''}`}
+                        style={{
+                            left: `${Math.random() * 100}%`,
+                            width: `${Math.random() * 4 + 2}px`,
+                            height: `${Math.random() * 4 + 2}px`,
+                            animationDuration: `${Math.random() * 10 + 10}s`,
+                            animationDelay: `${Math.random() * 5}s`
+                        }}
+                    />
+                ))}
+            </div>
             {/* Theme Toggle */}
             <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -217,17 +233,17 @@ export default function ShopPage() {
                 <span className="shop-badge">Vitrine Velmo</span>
                 <h1 className="shop-title">{shop.name}</h1>
 
-                {/* 📍 Info Boutique Section (New) */}
-                <div className="flex flex-wrap items-center justify-center gap-4 mt-4 text-sm text-slate-500">
-                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-white/5 py-1.5 px-3 rounded-full">
+                {/* 📍 Info Boutique Section */}
+                <div className="shop-info-bar">
+                    <div className="info-badge">
                         <MapPin size={14} className="text-primary" />
                         <span>Abidjan (Exemple)</span>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-white/5 py-1.5 px-3 rounded-full">
+                    <div className="info-badge">
                         <Clock size={14} className="text-primary" />
                         <span>Lun-Sam · 8h-18h</span>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-white/5 py-1.5 px-3 rounded-full">
+                    <div className="info-badge">
                         <Phone size={14} className="text-primary" />
                         <span>Contact après commande</span>
                     </div>
@@ -236,30 +252,25 @@ export default function ShopPage() {
                 <p className="text-slate-400 mt-4 max-w-lg mx-auto">{shop.description || "Retrouvez tous nos produits ci-dessous."}</p>
 
                 {/* 🔍 Search & Filter Section */}
-                <div className="mt-8 mb-2 w-full max-w-md mx-auto">
-                    <div className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Rechercher un produit..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 rounded-xl bg-slate-100 dark:bg-white/5 border-none outline-none focus:ring-2 focus:ring-primary/50 transition-all font-medium"
-                        />
-                    </div>
+                <div className="search-container">
+                    <Search className="search-icon" size={20} />
+                    <input
+                        type="text"
+                        placeholder="Rechercher un produit..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="search-input"
+                    />
                 </div>
 
                 {/* 📂 Categories */}
                 {categories.length > 1 && (
-                    <div className="flex gap-2 overflow-x-auto pb-4 pt-2 -mx-4 px-4 justify-start md:justify-center no-scrollbar">
+                    <div className="category-scroll">
                         {categories.map(cat => (
                             <button
                                 key={cat as string}
                                 onClick={() => setSelectedCategory(cat as string)}
-                                className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all ${selectedCategory === cat
-                                    ? 'bg-primary text-white shadow-lg shadow-primary/25'
-                                    : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
-                                    }`}
+                                className={`category-pill ${selectedCategory === cat ? 'active' : ''}`}
                             >
                                 {cat as string}
                             </button>
@@ -281,8 +292,8 @@ export default function ShopPage() {
                         style={{ cursor: 'pointer' }}
                     >
                         <div className="card-img-container">
-                            {product.image_url ? (
-                                <img src={product.image_url} alt={product.name} loading="lazy" />
+                            {product.photo_url ? (
+                                <img src={product.photo_url} alt={product.name} loading="lazy" />
                             ) : (
                                 <Store size={48} className="text-white/10" strokeWidth={1} />
                             )}
@@ -297,7 +308,7 @@ export default function ShopPage() {
                         <div className="card-content">
                             <h3 className="product-title" title={product.name}>{product.name}</h3>
                             <div className="product-price">
-                                {formatPrice(product.price, shop.currency || 'XOF')}
+                                {formatPrice(product.price_sale)}
                             </div>
 
                             {product.is_active && (
@@ -365,8 +376,8 @@ export default function ShopPage() {
                                 </button>
 
                                 <div className="product-modal-img">
-                                    {selectedProduct.image_url ? (
-                                        <img src={selectedProduct.image_url} alt={selectedProduct.name} />
+                                    {selectedProduct.photo_url ? (
+                                        <img src={selectedProduct.photo_url} alt={selectedProduct.name} />
                                     ) : (
                                         <Store size={64} className="text-slate-300" strokeWidth={1} />
                                     )}
@@ -375,7 +386,7 @@ export default function ShopPage() {
                                 <div className="product-modal-info">
                                     <h2>{selectedProduct.name}</h2>
                                     <div className="product-modal-price">
-                                        {formatPrice(selectedProduct.price, shop.currency || 'XOF')}
+                                        {formatPrice(selectedProduct.price_sale)}
                                     </div>
 
                                     {selectedProduct.description && (
@@ -527,8 +538,8 @@ export default function ShopPage() {
                                         <div className="cart-items-container">
                                             {cart.map(item => (
                                                 <div key={item.product.id} className="cart-item">
-                                                    {item.product.image_url ? (
-                                                        <img src={item.product.image_url} className="cart-item-img" alt={item.product.name} />
+                                                    {item.product.photo_url ? (
+                                                        <img src={item.product.photo_url} className="cart-item-img" alt={item.product.name} />
                                                     ) : (
                                                         <div className="cart-item-img bg-slate-100 flex items-center justify-center">
                                                             <Store className="text-slate-300" size={20} />
@@ -536,7 +547,7 @@ export default function ShopPage() {
                                                     )}
                                                     <div className="cart-item-info">
                                                         <h4 className="font-bold">{item.product.name}</h4>
-                                                        <p className="font-bold text-primary">{(item.product.price || 0).toLocaleString()} {shop.currency}</p>
+                                                        <p className="font-bold text-primary">{(item.product.price_sale || 0).toLocaleString()} {shop.currency}</p>
                                                     </div>
                                                     <div className="qty-controls">
                                                         <button

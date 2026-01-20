@@ -23,8 +23,8 @@ export interface Product {
   id: string;
   shop_id: string;
   name: string;
-  price: number;
-  image_url: string | null;
+  price_sale: number; // Was price
+  photo_url: string | null; // Was image_url
   is_active: boolean;
   is_visible: boolean;
   description: string | null;
