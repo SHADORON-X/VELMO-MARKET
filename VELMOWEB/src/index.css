@@ -1088,6 +1088,7 @@ body::after {
   background: linear-gradient(135deg, var(--text-main) 0%, var(--primary) 50%, var(--text-main) 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: shine 5s linear infinite;
 }
@@ -1295,6 +1296,7 @@ body::after {
   font-weight: 800;
   background: linear-gradient(to right, #fff, #ccc);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
@@ -1302,6 +1304,7 @@ body::after {
 .product-card:hover .product-price {
   background: var(--primary-gradient);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 0 5px rgba(255, 136, 0, 0.5));
 }
@@ -1490,6 +1493,7 @@ body::after {
   margin-bottom: 12px;
   background: linear-gradient(135deg, #fff 0%, #ccc 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -1px;
 }
@@ -1694,6 +1698,7 @@ body::after {
   font-weight: 800;
   background: linear-gradient(to right, #fff, #ccc);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 8px;
   letter-spacing: -0.5px;
@@ -3165,32 +3170,38 @@ img[loading] {
 img.loaded {
   opacity: 1;
 }
+
 /* ========================================== */
 /* ?? CRITICAL MOBILE & MODAL FIXES */
 /* ========================================== */
 
 /* 1. Modal Visibility Fix ?? */
 .product-modal-container {
-  background: rgba(0, 0, 0, 0.6); /* Darkens background */
+  background: rgba(0, 0, 0, 0.6);
+  /* Darkens background */
   backdrop-filter: blur(4px);
-  z-index: 9999 !important; /* Forces top layer */
+  z-index: 9999 !important;
+  /* Forces top layer */
 }
 
 .product-modal {
-  background: #121212 !important; /* SOLID black bg */
+  background: #121212 !important;
+  /* SOLID black bg */
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 -10px 40px rgba(0,0,0,0.8);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
   opacity: 1 !important;
 }
 
 [data-theme='light'] .product-modal {
-  background: #ffffff !important; /* SOLID white bg */
+  background: #ffffff !important;
+  /* SOLID white bg */
   border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 -10px 40px rgba(0,0,0,0.2);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
 }
 
 .modal-image {
-  background: #000; /* Dark bg for image container */
+  background: #000;
+  /* Dark bg for image container */
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -3198,7 +3209,8 @@ img.loaded {
 @media (max-width: 640px) {
   .product-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr) !important; /* 2 columns on mobile */
+    grid-template-columns: repeat(2, 1fr) !important;
+    /* 2 columns on mobile */
     gap: 12px !important;
     padding: 0 10px !important;
   }
@@ -3206,14 +3218,18 @@ img.loaded {
   .product-card {
     min-height: 260px;
   }
-  
+
   .card-img-container {
-    height: 140px; /* Smaller images */
+    height: 140px;
+    /* Smaller images */
   }
 
   .product-title {
-    font-size: 0.95rem; /* Smaller text */
-    -webkit-line-clamp: 2; /* Limit lines */
+    font-size: 0.95rem;
+    /* Smaller text */
+    -webkit-line-clamp: 2;
+    /* Limit lines */
+    line-clamp: 2;
   }
 
   .product-price {
@@ -3229,22 +3245,24 @@ img.loaded {
   /* Compact Header */
   .shop-header-content {
     padding: 10px;
-    margin-top: -30px; /* Pull up closer to cover */
+    margin-top: -30px;
+    /* Pull up closer to cover */
   }
 
   .shop-title {
     font-size: 1.8rem;
   }
-  
+
   .shop-cover {
-    height: 160px; /* Smaller cover */
+    height: 160px;
+    /* Smaller cover */
   }
 
   /* Search Bar */
   .search-container {
     height: 44px;
   }
-  
+
   .search-input {
     font-size: 0.95rem;
   }
@@ -3253,6 +3271,22 @@ img.loaded {
 /* 3. Tiny Phones (iPhone SE, Fold) */
 @media (max-width: 370px) {
   .product-grid {
-    grid-template-columns: 1fr !important; /* Single column for very small screens */
+    grid-template-columns: 1fr !important;
+    /* Single column for very small screens */
+  }
+}
+
+/* 4. Cart sheet mobile centering fix */
+@media (max-width: 1023px) {
+  .cart-sheet {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: 500px !important;
+    border-radius: 24px 24px 0 0 !important;
+    background: var(--cart-bg) !important;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5) !important;
   }
 }
