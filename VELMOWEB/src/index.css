@@ -927,6 +927,7 @@ body::after {
   transform: scale(1.1);
   background: var(--cart-hover-bg);
 }
+
 /* ?? New Shop Info & Filters */
 .shop-info-bar {
   display: flex;
@@ -973,7 +974,7 @@ body::after {
 
 .search-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 4px rgba(255,136,0,0.1);
+  box-shadow: 0 0 0 4px rgba(255, 136, 0, 0.1);
 }
 
 .search-icon {
@@ -1021,7 +1022,7 @@ body::after {
 }
 
 .category-pill:hover {
-  background: rgba(255,136,0,0.1);
+  background: rgba(255, 136, 0, 0.1);
   color: var(--primary);
   border-color: var(--primary);
 }
@@ -1054,7 +1055,8 @@ body::after {
 
 .particle.glow {
   filter: blur(8px);
-  background: #fea; /* Golden hint */
+  background: #fea;
+  /* Golden hint */
   opacity: 0.15;
 }
 
@@ -1063,12 +1065,15 @@ body::after {
     transform: translateY(100vh) scale(0.5);
     opacity: 0;
   }
+
   20% {
     opacity: 0.5;
   }
+
   80% {
     opacity: 0.2;
   }
+
   100% {
     transform: translateY(-20vh) scale(1.2);
     opacity: 0;
@@ -1104,10 +1109,12 @@ body::after {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(255, 136, 0, 0.7);
   }
+
   70% {
     transform: scale(1);
     box-shadow: 0 0 0 10px rgba(255, 136, 0, 0);
   }
+
   100% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(255, 136, 0, 0);
@@ -1124,8 +1131,13 @@ body::after {
   animation: floatBadge 6s ease-in-out infinite;
 }
 
-.info-badge:nth-child(2) { animation-delay: 1s; }
-.info-badge:nth-child(3) { animation-delay: 2s; }
+.info-badge:nth-child(2) {
+  animation-delay: 1s;
+}
+
+.info-badge:nth-child(3) {
+  animation-delay: 2s;
+}
 
 .info-badge:hover {
   background: rgba(255, 136, 0, 0.1);
@@ -1135,8 +1147,15 @@ body::after {
 }
 
 @keyframes floatBadge {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
 }
 
 /* Search Input: The Cockpit Control */
@@ -1149,8 +1168,10 @@ body::after {
   background: rgba(20, 20, 20, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
-  color: white; /* Force white text for contrast in space */
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Bouncy */
+  color: white;
+  /* Force white text for contrast in space */
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  /* Bouncy */
 }
 
 .search-input:focus {
@@ -1161,7 +1182,8 @@ body::after {
 }
 
 .search-icon {
-  color: var(--primary); /* Make icon pop */
+  color: var(--primary);
+  /* Make icon pop */
 }
 
 /* Category Pills: Planetary Rings */
@@ -1173,7 +1195,7 @@ body::after {
 
 .category-pill:hover {
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
 .category-pill.active {
@@ -1188,14 +1210,15 @@ body::after {
 
 /* Card Container: Glass & Neon */
 .product-card {
-  background: rgba(30, 30, 35, 0.6); /* Darker glass */
+  background: rgba(30, 30, 35, 0.6);
+  /* Darker glass */
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(12px);
   border-radius: 24px;
   overflow: hidden;
   transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
-  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
 
 .product-card:hover {
@@ -1211,7 +1234,7 @@ body::after {
   overflow: hidden;
   margin: 8px;
   position: relative;
-  background: radial-gradient(circle at center, rgba(255,255,255,0.05), transparent 70%);
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 70%);
 }
 
 .card-img-container img {
@@ -1225,7 +1248,7 @@ body::after {
 /* Add Button: Rocket Booster */
 .btn-add-cart {
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
   transition: all 0.3s ease;
   position: relative;
@@ -1240,20 +1263,30 @@ body::after {
 }
 
 .btn-add-cart:active {
-  transform: scale(0.95) rotate(-2deg); /* Impact recoil */
+  transform: scale(0.95) rotate(-2deg);
+  /* Impact recoil */
 }
 
 /* Added State: Green Success Pulse */
 .btn-add-cart.added {
-  background: #10b981; /* Emerald 500 */
+  background: #10b981;
+  /* Emerald 500 */
   border-color: #10b981;
   animation: success-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 @keyframes success-pop {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Price: Glowing Numbers */
@@ -1263,51 +1296,67 @@ body::after {
   background: linear-gradient(to right, #fff, #ccc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
 .product-card:hover .product-price {
   background: var(--primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 5px rgba(255,136,0,0.5));
+  filter: drop-shadow(0 0 5px rgba(255, 136, 0, 0.5));
 }
 
 /* Stock Badge: Floating Bubble */
 .stock-badge {
-  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
   animation: float-badge 3s ease-in-out infinite;
 }
 
 @keyframes float-badge {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
 }
 
 /* ?? Tooltips / Popups Styling */
 .tooltip-custom {
-  background: rgba(0,0,0,0.8);
+  background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 0.8rem;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   animation: tooltip-slide 0.2s ease-out;
 }
 
 @keyframes tooltip-slide {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 
 /* ?? ORANGE HIGH-PVIS PRICES */
-.product-price, .product-modal-price {
+.product-price,
+.product-modal-price {
   background: none !important;
   -webkit-text-fill-color: initial !important;
-  color: #ff5500 !important; /* Intl Orange */
+  color: #ff5500 !important;
+  /* Intl Orange */
   font-weight: 800 !important;
   text-shadow: 0 0 25px rgba(255, 85, 0, 0.4);
   letter-spacing: -0.5px;
@@ -1365,12 +1414,12 @@ body::after {
 .toggle-item.active {
   background: var(--cart-bg);
   color: var(--text-main);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   border-color: var(--cart-border);
 }
 
 .toggle-item:hover:not(.active) {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 
@@ -1385,7 +1434,8 @@ body::after {
   box-shadow: 0 12px 40px -8px rgba(255, 85, 0, 0.4);
 }
 
-.delivery-info-card, .cart-sheet {
+.delivery-info-card,
+.cart-sheet {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
 }
@@ -1397,7 +1447,7 @@ body::after {
 /* Floating Cart Button Polish */
 .cart-floating {
   border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(12px);
 }
 
@@ -1453,7 +1503,8 @@ body::after {
 /* Form & Inputs */
 .landing-form {
   background: var(--cart-bg);
-  padding: 8px; /* Inner padding for glass effect */
+  padding: 8px;
+  /* Inner padding for glass effect */
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
@@ -1528,7 +1579,7 @@ body::after {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #ef4444; 
+  color: #ef4444;
   background: rgba(239, 68, 68, 0.1);
   padding: 12px;
   border-radius: 12px;
@@ -1539,10 +1590,27 @@ body::after {
 }
 
 @keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
+
+  10%,
+  90% {
+    transform: translate3d(-1px, 0, 0);
+  }
+
+  20%,
+  80% {
+    transform: translate3d(2px, 0, 0);
+  }
+
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-4px, 0, 0);
+  }
+
+  40%,
+  60% {
+    transform: translate3d(4px, 0, 0);
+  }
 }
 
 
@@ -1582,8 +1650,15 @@ body::after {
 }
 
 @keyframes pulseLogo {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
 }
 
 /* Spinner Rings */
@@ -1609,7 +1684,9 @@ body::after {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -1628,7 +1705,7 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px; 
+  gap: 8px;
 }
 
 .loading-subtext::after {
@@ -1641,8 +1718,17 @@ body::after {
 }
 
 @keyframes dotBlink {
-  0%, 100% { opacity: 0; transform: translateX(-5px); }
-  50% { opacity: 1; transform: translateX(5px); }
+
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateX(5px);
+  }
 }
 
 
@@ -1774,7 +1860,8 @@ body::after {
   transition: all 0.2s;
 }
 
-.filter-toggle:hover, .filter-toggle.active {
+.filter-toggle:hover,
+.filter-toggle.active {
   background: rgba(255, 136, 0, 0.1);
   border-color: var(--primary);
   color: var(--primary);
@@ -2245,28 +2332,28 @@ body::after {
     padding: 40px 16px;
     margin: 20px 0;
   }
-  
+
   .shop-title {
     font-size: 2rem;
   }
-  
+
   .search-filter-row {
     flex-direction: column;
   }
-  
+
   .filter-toggle {
     justify-content: center;
   }
-  
+
   .trust-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .shop-info-bar {
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .info-badge {
     width: 100%;
     justify-content: center;
@@ -2316,7 +2403,7 @@ body::after {
 .shop-cover-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -2499,7 +2586,8 @@ body::after {
   color: var(--text-muted);
 }
 
-.btn-close, .btn-share {
+.btn-close,
+.btn-share {
   position: absolute;
   top: 16px;
   width: 40px;
@@ -2524,7 +2612,8 @@ body::after {
   right: 64px;
 }
 
-.btn-close:hover, .btn-share:hover {
+.btn-close:hover,
+.btn-share:hover {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
@@ -2590,7 +2679,8 @@ body::after {
   gap: 8px;
 }
 
-.btn-share-sm, .btn-close-cart {
+.btn-share-sm,
+.btn-close-cart {
   width: 36px;
   height: 36px;
   border-radius: 10px;
@@ -2604,7 +2694,8 @@ body::after {
   transition: all 0.2s;
 }
 
-.btn-share-sm:hover, .btn-close-cart:hover {
+.btn-share-sm:hover,
+.btn-close-cart:hover {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
@@ -3001,7 +3092,7 @@ body::after {
 /* ?? FINAL POLISH & TYPOGRAPHY */
 /* ========================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
 
 :root {
   --font-main: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -3033,7 +3124,9 @@ body {
 }
 
 /* Inputs Refinement */
-input, textarea, select {
+input,
+textarea,
+select {
   font-family: var(--font-main) !important;
 }
 
