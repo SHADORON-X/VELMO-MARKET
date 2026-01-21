@@ -36,7 +36,7 @@ function LandingPage() {
       const { data, error } = await supabase
         .from('shops')
         .select('slug')
-        .eq('slug', slug.trim()) // Removed .eq('is_public', true) for testing, or keep it if crucial
+        .ilike('slug', slug.trim()) // Case-insensitive match 🔍
         .single();
 
       if (error || !data) {

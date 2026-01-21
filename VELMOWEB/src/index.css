@@ -3172,121 +3172,133 @@ img.loaded {
 }
 
 /* ========================================== */
-/* ?? CRITICAL MOBILE & MODAL FIXES */
+/* 🚀 MOBILE & TABLET MASTER FIX (CENTRING) 🚀 */
 /* ========================================== */
 
-/* 1. Modal Visibility Fix ?? */
-.product-modal-container {
-  background: rgba(0, 0, 0, 0.6);
-  /* Darkens background */
-  backdrop-filter: blur(4px);
-  z-index: 9999 !important;
-  /* Forces top layer */
+@media (max-width: 1199px) {
+
+  /* 1. Force Floating Cart Button to CENTER 🛑 */
+  .cart-floating {
+    position: fixed !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: 25px !important;
+    transform: translateX(-50%) !important;
+    width: max-content !important;
+    min-width: 240px !important;
+    margin: 0 !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    z-index: 999 !important;
+    box-shadow: 0 10px 40px rgba(255, 136, 0, 0.4) !important;
+  }
+
+  /* 2. Force Cart Sheet (Le Panier) to CENTER 🛒 */
+  .cart-sheet {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    margin: 0 auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 500px !important;
+    height: 85vh !important;
+    border-radius: 28px 28px 0 0 !important;
+    z-index: 1000 !important;
+    background: #111111 !important;
+    /* Deep solid black */
+  }
+
+  [data-theme='light'] .cart-sheet {
+    background: #ffffff !important;
+    /* Deep solid white */
+  }
+
+  /* 3. Force Product Detail Modal to CENTER & OPAQUE 📦 */
+  .product-modal-container {
+    padding: 10px !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    /* On mobile/tablet, it's a bottom sheet */
+    justify-content: center !important;
+    z-index: 10000 !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    backdrop-filter: blur(8px) !important;
+    pointer-events: auto !important;
+  }
+
+  .product-modal {
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 500px !important;
+    background: #111111 !important;
+    /* Solid background */
+    opacity: 1 !important;
+    border-radius: 28px 28px 0 0 !important;
+    box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.8) !important;
+    position: relative !important;
+    pointer-events: auto !important;
+  }
+
+  [data-theme='light'] .product-modal {
+    background: #ffffff !important;
+  }
+
+  /* 4. Center Search & Header Badges 🔍 */
+  .search-filter-row {
+    margin-top: 10px !important;
+    padding: 0 10px !important;
+  }
+
+  .search-container {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .shop-header-content,
+  .shop-badge-container {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+  }
+
+  .shop-info-bar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .info-badge {
+    margin: 0 !important;
+  }
 }
 
-.product-modal {
-  background: #121212 !important;
-  /* SOLID black bg */
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
-  opacity: 1 !important;
-}
-
-[data-theme='light'] .product-modal {
-  background: #ffffff !important;
-  /* SOLID white bg */
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
-}
-
-.modal-image {
-  background: #000;
-  /* Dark bg for image container */
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-/* 2. Mobile Responsive Grid ?? */
+/* 5. Product Grid fix for smaller mobile */
 @media (max-width: 640px) {
   .product-grid {
-    display: grid;
     grid-template-columns: repeat(2, 1fr) !important;
-    /* 2 columns on mobile */
     gap: 12px !important;
     padding: 0 10px !important;
   }
 
   .product-card {
-    min-height: 260px;
-  }
-
-  .card-img-container {
-    height: 140px;
-    /* Smaller images */
-  }
-
-  .product-title {
-    font-size: 0.95rem;
-    /* Smaller text */
-    -webkit-line-clamp: 2;
-    /* Limit lines */
-    line-clamp: 2;
-  }
-
-  .product-price {
-    font-size: 1.1rem !important;
-  }
-
-  /* Smaller buttons on mobile */
-  .btn-add-cart {
-    padding: 8px;
-    font-size: 0.85rem;
-  }
-
-  /* Compact Header */
-  .shop-header-content {
-    padding: 10px;
-    margin-top: -30px;
-    /* Pull up closer to cover */
-  }
-
-  .shop-title {
-    font-size: 1.8rem;
-  }
-
-  .shop-cover {
-    height: 160px;
-    /* Smaller cover */
-  }
-
-  /* Search Bar */
-  .search-container {
-    height: 44px;
-  }
-
-  .search-input {
-    font-size: 0.95rem;
+    min-height: auto !important;
   }
 }
 
-/* 3. Tiny Phones (iPhone SE, Fold) */
-@media (max-width: 370px) {
+/* 6. Fix for very tiny screens */
+@media (max-width: 360px) {
   .product-grid {
     grid-template-columns: 1fr !important;
-    /* Single column for very small screens */
   }
-}
 
-/* 4. Cart sheet mobile centering fix */
-@media (max-width: 1023px) {
-  .cart-sheet {
-    left: 50% !important;
-    right: auto !important;
-    transform: translateX(-50%) !important;
-    bottom: 0 !important;
-    width: 100% !important;
-    max-width: 500px !important;
-    border-radius: 24px 24px 0 0 !important;
-    background: var(--cart-bg) !important;
-    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5) !important;
+  .cart-floating {
+    min-width: 90% !important;
   }
 }

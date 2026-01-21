@@ -138,7 +138,7 @@ export default function ShopPage() {
             const { data: shopData, error: shopError } = await supabase
                 .from('shops')
                 .select('*')
-                .eq('slug', slug)
+                .ilike('slug', slug || '') // Case-insensitive match 🔍
                 .eq('is_public', true)
                 .single();
 
