@@ -1,14 +1,21 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import type { Shop, Product } from '../lib/supabase';
-import { ShoppingBag, Plus, Minus, Trash2, X, Check, Loader2, Store, ArrowRight, ShoppingCart, Moon, Sun, ArrowLeft, MapPin, Truck, Search, Clock, Phone } from 'lucide-react';
+import {
+    ShoppingBag, Plus, Minus, Trash2, X, Check, Loader2, Store, ArrowRight, ShoppingCart,
+    Moon, Sun, ArrowLeft, MapPin, Truck, Search, Clock, Phone, Heart, Share2, MessageCircle,
+    Shield, CreditCard, Users, Star, Filter, ChevronDown, ExternalLink, Copy, CheckCircle2, BadgeCheck
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface CartItem {
     product: Product;
     quantity: number;
 }
+
+type SortOption = 'default' | 'price-asc' | 'price-desc' | 'name' | 'popular';
+type FilterOption = 'all' | 'available' | 'new';
 
 export default function ShopPage() {
     const { slug } = useParams<{ slug: string }>();
@@ -36,6 +43,7 @@ export default function ShopPage() {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [orderSuccess, setOrderSuccess] = useState(false);
+    const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(null);
     const [addedId, setAddedId] = useState<string | null>(null);
 
     // Form State
@@ -45,14 +53,32 @@ export default function ShopPage() {
 
     // Product Modal State
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [modalQuantity, setModalQuantity] = useState(1);
 
     // Search & Filter State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Tout');
+    const [sortOption, setSortOption] = useState<SortOption>('default');
+    const [filterOption, setFilterOption] = useState<FilterOption>('all');
+    const [showFilters, setShowFilters] = useState(false);
+
+    // Favorites
+    const [favorites, setFavorites] = useState<string[]>(() => {
+        const saved = localStorage.getItem('velmo_favorites');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    // Share Modal
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [copiedLink, setCopiedLink] = useState(false);
 
     useEffect(() => {
         localStorage.setItem('velmo_cart', JSON.stringify(cart));
     }, [cart]);
+
+    useEffect(() => {
+        localStorage.setItem('velmo_favorites', JSON.stringify(favorites));
+    }, [favorites]);
 
     useEffect(() => {
         if (slug) loadShopData();
@@ -61,16 +87,50 @@ export default function ShopPage() {
     // Helpers
     const formatPrice = (price: number | null | undefined) => {
         if (!price || isNaN(price) || price === 0) return "Prix sur demande";
-        return `${price.toLocaleString()} GNF`;
+        return `${price.toLocaleString('fr-FR')} GNF`;
     };
 
-    const categories = ['Tout', ...new Set(products.map(p => p.category).filter(Boolean))];
+    const categories = useMemo(() =>
+        ['Tout', ...new Set(products.map(p => p.category).filter(Boolean))],
+        [products]
+    );
 
-    const filteredProducts = products.filter(product => {
-        const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesCategory = selectedCategory === 'Tout' || product.category === selectedCategory;
-        return matchesSearch && matchesCategory;
-    });
+    const filteredAndSortedProducts = useMemo(() => {
+        let result = products.filter(product => {
+            const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (product.description?.toLowerCase().includes(searchQuery.toLowerCase()));
+            const matchesCategory = selectedCategory === 'Tout' || product.category === selectedCategory;
+
+            // Filter options
+            let matchesFilter = true;
+            if (filterOption === 'available') matchesFilter = product.is_active;
+            if (filterOption === 'new') {
+                const oneWeekAgo = new Date();
+                oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+                matchesFilter = product.created_at ? new Date(product.created_at) > oneWeekAgo : false;
+            }
+
+            return matchesSearch && matchesCategory && matchesFilter;
+        });
+
+        // Sorting
+        switch (sortOption) {
+            case 'price-asc':
+                result.sort((a, b) => (a.price_sale || 0) - (b.price_sale || 0));
+                break;
+            case 'price-desc':
+                result.sort((a, b) => (b.price_sale || 0) - (a.price_sale || 0));
+                break;
+            case 'name':
+                result.sort((a, b) => a.name.localeCompare(b.name));
+                break;
+            case 'popular':
+                result.sort((a, b) => (b.is_popular ? 1 : 0) - (a.is_popular ? 1 : 0));
+                break;
+        }
+
+        return result;
+    }, [products, searchQuery, selectedCategory, sortOption, filterOption]);
 
     const loadShopData = async () => {
         try {
@@ -102,7 +162,7 @@ export default function ShopPage() {
         }
     };
 
-    const addToCart = (product: Product) => {
+    const addToCart = (product: Product, quantity: number = 1) => {
         if (navigator.vibrate) navigator.vibrate(50);
 
         // Visual feedback
@@ -113,10 +173,10 @@ export default function ShopPage() {
             const existing = prev.find(item => item.product.id === product.id);
             if (existing) {
                 return prev.map(item =>
-                    item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                    item.product.id === product.id ? { ...item, quantity: item.quantity + quantity } : item
                 );
             }
-            return [...prev, { product, quantity: 1 }];
+            return [...prev, { product, quantity }];
         });
     };
 
@@ -124,7 +184,7 @@ export default function ShopPage() {
         setCart(prev => prev.map(item => {
             if (item.product.id === productId) {
                 const newQuantity = Math.max(0, item.quantity + delta);
-                setAddedId(productId); // Small sparkle/feedback
+                setAddedId(productId);
                 setTimeout(() => setAddedId(null), 1000);
                 return { ...item, quantity: newQuantity };
             }
@@ -142,9 +202,87 @@ export default function ShopPage() {
         }).filter(item => item.quantity > 0));
     };
 
+    const toggleFavorite = (productId: string) => {
+        if (navigator.vibrate) navigator.vibrate(30);
+        setFavorites(prev =>
+            prev.includes(productId)
+                ? prev.filter(id => id !== productId)
+                : [...prev, productId]
+        );
+    };
 
     const totalAmount = cart.reduce((acc, item) => acc + ((item.product.price_sale || 0) * item.quantity), 0);
     const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
+
+    // 📲 WhatsApp Deep Link Generator (OPTION B - Zero Backend)
+    const generateWhatsAppLink = (orderId?: string) => {
+        if (!shop) return '';
+
+        const shopPhone = shop.whatsapp || shop.phone || '';
+        const cleanPhone = shopPhone.replace(/\D/g, '');
+
+        const itemsList = cart.map(item =>
+            `• ${item.product.name} x${item.quantity} = ${formatPrice(item.product.price_sale * item.quantity)}`
+        ).join('\n');
+
+        const message = `📦 *NOUVELLE COMMANDE VELMO*
+
+🏪 *Boutique:* ${shop.name}
+${orderId ? `🆔 *Réf:* #${orderId.slice(0, 8).toUpperCase()}` : ''}
+
+👤 *Client:* ${customerInfo.name}
+📱 *Téléphone:* ${customerInfo.phone}
+
+🛒 *Produits:*
+${itemsList}
+
+💰 *TOTAL:* ${formatPrice(totalAmount)}
+
+📍 *Mode:* ${deliveryMethod === 'pickup' ? 'Retrait en boutique' : 'Livraison à domicile'}
+${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
+
+---
+✅ Envoyé via Velmo`;
+
+        return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    };
+
+    // 📤 Share Cart Link
+    const generateShareCartLink = () => {
+        if (cart.length === 0) return '';
+
+        const itemsList = cart.map(item =>
+            `• ${item.product.name} x${item.quantity}`
+        ).join('\n');
+
+        const message = `🛒 *Mon panier chez ${shop?.name}*
+
+${itemsList}
+
+💰 Total: ${formatPrice(totalAmount)}
+
+👉 Voir la boutique: ${window.location.href}`;
+
+        return `https://wa.me/?text=${encodeURIComponent(message)}`;
+    };
+
+    // 📤 Share Product Link
+    const generateShareProductLink = (product: Product) => {
+        const message = `🔥 Regarde ce produit chez ${shop?.name}!
+
+📦 *${product.name}*
+💰 ${formatPrice(product.price_sale)}
+
+👉 ${window.location.href}`;
+
+        return `https://wa.me/?text=${encodeURIComponent(message)}`;
+    };
+
+    const copyToClipboard = async (text: string) => {
+        await navigator.clipboard.writeText(text);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+    };
 
     const handleSubmitOrder = async (e: FormEvent) => {
         e.preventDefault();
@@ -152,25 +290,32 @@ export default function ShopPage() {
 
         try {
             setIsSubmitting(true);
-            const { error } = await supabase
+
+            const orderData = {
+                shop_id: shop.id,
+                items: cart.map(item => ({
+                    id: item.product.id,
+                    name: item.product.name,
+                    price: item.product.price_sale || 0,
+                    quantity: item.quantity
+                })),
+                total_amount: totalAmount,
+                customer_name: customerInfo.name,
+                customer_phone: customerInfo.phone,
+                order_note: orderNote,
+                delivery_method: deliveryMethod,
+                status: 'pending'
+            };
+
+            const { data, error } = await supabase
                 .from('customer_orders')
-                .insert({
-                    shop_id: shop.id,
-                    items: cart.map(item => ({
-                        id: item.product.id,
-                        name: item.product.name,
-                        price: item.product.price_sale || 0,
-                        quantity: item.quantity
-                    })),
-                    total_amount: totalAmount,
-                    customer_name: customerInfo.name,
-                    customer_phone: customerInfo.phone,
-                    order_note: orderNote,
-                    delivery_method: deliveryMethod,
-                    status: 'pending'
-                });
+                .insert(orderData)
+                .select('id')
+                .single();
 
             if (error) throw error;
+
+            setSubmittedOrderId(data?.id || null);
             setOrderSuccess(true);
             setCart([]);
             localStorage.removeItem('velmo_cart');
@@ -182,28 +327,75 @@ export default function ShopPage() {
         }
     };
 
+    // Get stock status
+    const getStockStatus = (product: Product) => {
+        if (!product.is_active) return { label: 'Rupture', color: 'red' };
+        if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
+            if (product.stock_quantity === 0) return { label: 'Rupture', color: 'red' };
+            if (product.stock_quantity <= 5) return { label: 'Stock faible', color: 'yellow' };
+        }
+        return { label: 'Disponible', color: 'green' };
+    };
+
+    // ===================== LOADING STATE =====================
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen text-slate-400">
-                <Loader2 className="animate-spin mb-4" size={40} />
-                <p>Chargement de la boutique...</p>
+            <div className="shop-loading-screen">
+                <div className="particles-container">
+                    {[...Array(20)].map((_, i) => (
+                        <div
+                            key={i}
+                            className={`particle ${i % 3 === 0 ? 'glow' : ''}`}
+                            style={{
+                                left: `${Math.random() * 100}%`,
+                                width: `${Math.random() * 4 + 2}px`,
+                                height: `${Math.random() * 4 + 2}px`,
+                                animationDuration: `${Math.random() * 8 + 5}s`,
+                                animationDelay: `${Math.random() * 2}s`
+                            }}
+                        />
+                    ))}
+                </div>
+
+                <div className="loader-content">
+                    <div className="loader-logo-container">
+                        <div className="loader-ring"></div>
+                        <div className="loader-ring-inner"></div>
+                        <svg viewBox="0 0 100 100" fill="none" className="loader-logo">
+                            <rect width="100" height="100" rx="28" fill="#ff5500" />
+                            <path d="M32 38L50 72L68 38" stroke="white" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </div>
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                    >
+                        <h2 className="loading-text">Ouverture de la boutique...</h2>
+                        <p className="loading-subtext">Chargement des produits en cours</p>
+                    </motion.div>
+                </div>
             </div>
         );
     }
 
+    // ===================== SHOP NOT FOUND =====================
     if (!shop) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center">
-                <Store className="w-16 h-16 text-slate-300 mb-4" />
-                <h1 className="text-xl font-bold text-slate-700">Boutique introuvable</h1>
-                <p className="text-slate-500 mt-2">Cette boutique n'existe pas ou est fermée.</p>
+            <div className="error-screen">
+                <Store className="error-icon" size={64} />
+                <h1>Boutique introuvable</h1>
+                <p>Cette boutique n'existe pas ou est fermée.</p>
+                <a href="/" className="btn-back-home">Retour à l'accueil</a>
             </div>
         );
     }
 
+    // ===================== MAIN RENDER =====================
     return (
-        <div className="container">
-            {/* ✨ Golden Particles Background */}
+        <div className="shop-container">
+            {/* ✨ Particles Background */}
             <div className="particles-container">
                 {[...Array(15)].map((_, i) => (
                     <div
@@ -219,6 +411,7 @@ export default function ShopPage() {
                     />
                 ))}
             </div>
+
             {/* Theme Toggle */}
             <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -228,42 +421,147 @@ export default function ShopPage() {
                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            {/* Header */}
+            {/* ===================== SHOP HEADER ===================== */}
             <header className="shop-header">
-                <span className="shop-badge">Vitrine Velmo</span>
-                <h1 className="shop-title">{shop.name}</h1>
+                {/* 🖼️ COVER IMAGE (NEW!) */}
+                {shop.cover_url && (
+                    <div className="shop-cover">
+                        <img src={shop.cover_url} alt={`Couverture ${shop.name}`} />
+                        <div className="shop-cover-overlay"></div>
+                    </div>
+                )}
 
-                {/* 📍 Info Boutique Section */}
-                <div className="shop-info-bar">
-                    <div className="info-badge">
-                        <MapPin size={14} className="text-primary" />
-                        <span>Abidjan (Exemple)</span>
+                <div className="shop-header-content">
+                    {/* Logo Boutique */}
+                    {shop.logo_url && (
+                        <div className="shop-logo-container">
+                            <img src={shop.logo_url} alt={shop.name} className="shop-logo" />
+                        </div>
+                    )}
+
+                    {/* Badges */}
+                    <div className="shop-badge-container">
+                        {shop.is_verified && (
+                            <span className="shop-badge verified">
+                                <BadgeCheck size={14} />
+                                Boutique vérifiée
+                            </span>
+                        )}
+                        {shop.orders_count && shop.orders_count > 50 && (
+                            <span className="shop-badge orders">
+                                <Users size={14} />
+                                +{shop.orders_count} commandes
+                            </span>
+                        )}
                     </div>
-                    <div className="info-badge">
-                        <Clock size={14} className="text-primary" />
-                        <span>Lun-Sam · 8h-18h</span>
+
+                    <h1 className="shop-title">{shop.name}</h1>
+
+                    {/* 📍 Info Bar */}
+                    <div className="shop-info-bar">
+                        {shop.location && (
+                            <div className="info-badge">
+                                <MapPin size={14} />
+                                <span>{shop.location}</span>
+                            </div>
+                        )}
+                        {shop.opening_hours && (
+                            <div className="info-badge">
+                                <Clock size={14} />
+                                <span>{shop.opening_hours}</span>
+                            </div>
+                        )}
+                        {(shop.whatsapp || shop.phone) && (
+                            <a
+                                href={`https://wa.me/${(shop.whatsapp || shop.phone)?.replace(/\D/g, '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="info-badge whatsapp-badge"
+                            >
+                                <MessageCircle size={14} />
+                                <span>Contacter</span>
+                            </a>
+                        )}
                     </div>
-                    <div className="info-badge">
-                        <Phone size={14} className="text-primary" />
-                        <span>Contact après commande</span>
-                    </div>
+
+                    {shop.description && (
+                        <p className="shop-description">{shop.description}</p>
+                    )}
                 </div>
 
-                <p className="text-slate-400 mt-4 max-w-lg mx-auto">{shop.description || "Retrouvez tous nos produits ci-dessous."}</p>
-
-                {/* 🔍 Search & Filter Section */}
-                <div className="search-container">
-                    <Search className="search-icon" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Rechercher un produit..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="search-input"
-                    />
+                {/* 🔍 Search & Filter */}
+                <div className="search-filter-row">
+                    <div className="search-container">
+                        <Search className="search-icon" size={20} />
+                        <input
+                            type="text"
+                            placeholder="Rechercher un produit..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="search-input"
+                        />
+                    </div>
+                    <button
+                        className={`filter-toggle ${showFilters ? 'active' : ''}`}
+                        onClick={() => setShowFilters(!showFilters)}
+                    >
+                        <Filter size={18} />
+                        <ChevronDown size={16} className={`chevron ${showFilters ? 'rotated' : ''}`} />
+                    </button>
                 </div>
 
-                {/* 📂 Categories */}
+                {/* Filters Panel */}
+                <AnimatePresence>
+                    {showFilters && (
+                        <motion.div
+                            className="filters-panel"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                        >
+                            <div className="filter-group">
+                                <span className="filter-label">Trier par</span>
+                                <div className="filter-options">
+                                    {[
+                                        { value: 'default', label: 'Défaut' },
+                                        { value: 'price-asc', label: 'Prix ↑' },
+                                        { value: 'price-desc', label: 'Prix ↓' },
+                                        { value: 'name', label: 'A-Z' },
+                                        { value: 'popular', label: '🔥' },
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.value}
+                                            className={`filter-chip ${sortOption === opt.value ? 'active' : ''}`}
+                                            onClick={() => setSortOption(opt.value as SortOption)}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="filter-group">
+                                <span className="filter-label">Afficher</span>
+                                <div className="filter-options">
+                                    {[
+                                        { value: 'all', label: 'Tous' },
+                                        { value: 'available', label: '✅ Dispo' },
+                                        { value: 'new', label: '🆕 Nouveau' },
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.value}
+                                            className={`filter-chip ${filterOption === opt.value ? 'active' : ''}`}
+                                            onClick={() => setFilterOption(opt.value as FilterOption)}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Categories */}
                 {categories.length > 1 && (
                     <div className="category-scroll">
                         {categories.map(cat => (
@@ -279,137 +577,192 @@ export default function ShopPage() {
                 )}
             </header>
 
-            {/* Product Grid */}
-            <div className="product-grid">
-                {filteredProducts.map(product => (
-                    <motion.div
-                        key={product.id}
-                        className="product-card"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        whileHover={{ y: -5 }}
-                        onClick={() => setSelectedProduct(product)}
-                        style={{ cursor: 'pointer' }}
-                    >
-                        <div className="card-img-container">
-                            {product.photo_url ? (
-                                <img src={product.photo_url} alt={product.name} loading="lazy" />
-                            ) : (
-                                <Store size={48} className="text-white/10" strokeWidth={1} />
-                            )}
-                            {/* Stock Badge */}
-                            <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-md ${product.is_active
-                                ? 'bg-green-500/90 text-white'
-                                : 'bg-red-500/90 text-white'
-                                }`}>
-                                {product.is_active ? 'Disponible' : 'Rupture'}
-                            </div>
-                        </div>
-                        <div className="card-content">
-                            <h3 className="product-title" title={product.name}>{product.name}</h3>
-                            <div className="product-price">
-                                {formatPrice(product.price_sale)}
-                            </div>
+            {/* ===================== PRODUCT GRID ===================== */}
+            <main className="products-section">
+                <div className="product-grid">
+                    {filteredAndSortedProducts.map((product, index) => {
+                        const stockStatus = getStockStatus(product);
+                        const isFavorite = favorites.includes(product.id);
 
-                            {product.is_active && (
-                                <button
-                                    className={`btn-add-cart ${addedId === product.id ? 'added' : ''}`}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        addToCart(product);
-                                    }}
-                                >
-                                    {addedId === product.id ? (
-                                        <>
-                                            <Check size={18} />
-                                            <span>Ajouté !</span>
-                                        </>
+                        return (
+                            <motion.div
+                                key={product.id}
+                                className="product-card"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: index * 0.03 }}
+                                whileHover={{ y: -4 }}
+                                onClick={() => {
+                                    setSelectedProduct(product);
+                                    setModalQuantity(1);
+                                }}
+                            >
+                                <div className="card-img-container">
+                                    {product.photo_url ? (
+                                        <img src={product.photo_url} alt={product.name} loading="lazy" />
                                     ) : (
-                                        <>
-                                            <Plus size={18} />
-                                            <span>Ajouter</span>
-                                        </>
+                                        <Store size={40} className="placeholder-icon" />
                                     )}
-                                </button>
-                            )}
+
+                                    {/* Favorite */}
+                                    <button
+                                        className={`favorite-btn ${isFavorite ? 'active' : ''}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleFavorite(product.id);
+                                        }}
+                                    >
+                                        <Heart size={16} fill={isFavorite ? '#ff5500' : 'none'} />
+                                    </button>
+
+                                    {/* Stock Badge */}
+                                    <div className={`stock-badge stock-${stockStatus.color}`}>
+                                        {stockStatus.label}
+                                    </div>
+
+                                    {/* Popular */}
+                                    {product.is_popular && (
+                                        <div className="popular-badge">
+                                            <Star size={10} fill="currentColor" /> Top
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="card-content">
+                                    <h3 className="product-title">{product.name}</h3>
+                                    <div className="product-price">{formatPrice(product.price_sale)}</div>
+
+                                    {product.is_active && (
+                                        <button
+                                            className={`btn-add-cart ${addedId === product.id ? 'added' : ''}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                addToCart(product);
+                                            }}
+                                        >
+                                            {addedId === product.id ? (
+                                                <><Check size={16} /> Ajouté</>
+                                            ) : (
+                                                <><Plus size={16} /> Ajouter</>
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+
+                    {filteredAndSortedProducts.length === 0 && (
+                        <div className="empty-products">
+                            <ShoppingBag size={48} />
+                            <p>Aucun produit trouvé</p>
+                            {searchQuery && <span>Essayez une autre recherche</span>}
                         </div>
-                    </motion.div>
-                ))}
+                    )}
+                </div>
+            </main>
 
-                {filteredProducts.length === 0 && (
-                    <div className="col-span-full text-center py-20 text-slate-500">
-                        <ShoppingBag size={48} className="mx-auto mb-4 opacity-20" />
-                        <p className="font-bold text-lg">Aucun produit trouvé</p>
-                        {searchQuery && <p className="text-sm mt-2 opacity-60">Essayez une autre recherche.</p>}
-                        {!searchQuery && selectedCategory !== 'Tout' && <button onClick={() => setSelectedCategory('Tout')} className="text-primary mt-4 font-bold text-sm underline">Voir tous les produits</button>}
+            {/* ===================== TRUST SECTION ===================== */}
+            <section className="trust-section">
+                <h3>Pourquoi commander chez nous ?</h3>
+                <div className="trust-grid">
+                    <div className="trust-card">
+                        <div className="trust-icon blue"><CreditCard size={22} /></div>
+                        <h4>Paiement à la livraison</h4>
+                        <p>Payez seulement à réception</p>
                     </div>
-                )}
-            </div>
+                    <div className="trust-card">
+                        <div className="trust-icon green"><Shield size={22} /></div>
+                        <h4>Commande sécurisée</h4>
+                        <p>Données protégées</p>
+                    </div>
+                    <div className="trust-card">
+                        <div className="trust-icon orange"><MessageCircle size={22} /></div>
+                        <h4>Support WhatsApp</h4>
+                        <p>Assistance 7j/7</p>
+                    </div>
+                </div>
+            </section>
 
-            {/* Product Quick View Modal */}
+            {/* ===================== PRODUCT MODAL ===================== */}
             <AnimatePresence>
                 {selectedProduct && (
                     <>
-                        {/* Overlay */}
                         <motion.div
-                            className="product-modal-overlay"
+                            className="modal-overlay"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setSelectedProduct(null)}
                         />
-
-                        {/* Modal Content */}
                         <div className="product-modal-container">
                             <motion.div
-                                className="product-modal-content"
+                                className="product-modal"
                                 initial={{ y: '100%' }}
                                 animate={{ y: 0 }}
                                 exit={{ y: '100%' }}
                                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                             >
-                                <button
-                                    className="btn-close-modal"
-                                    onClick={() => setSelectedProduct(null)}
-                                >
+                                <button className="btn-close" onClick={() => setSelectedProduct(null)}>
                                     <X size={24} />
                                 </button>
+                                <button
+                                    className="btn-share"
+                                    onClick={() => window.open(generateShareProductLink(selectedProduct), '_blank')}
+                                >
+                                    <Share2 size={18} />
+                                </button>
 
-                                <div className="product-modal-img">
+                                <div className="modal-image">
                                     {selectedProduct.photo_url ? (
                                         <img src={selectedProduct.photo_url} alt={selectedProduct.name} />
                                     ) : (
-                                        <Store size={64} className="text-slate-300" strokeWidth={1} />
+                                        <Store size={64} className="text-slate-300" />
                                     )}
                                 </div>
 
-                                <div className="product-modal-info">
-                                    <h2>{selectedProduct.name}</h2>
-                                    <div className="product-modal-price">
-                                        {formatPrice(selectedProduct.price_sale)}
+                                <div className="modal-info">
+                                    <div className="modal-badges">
+                                        {selectedProduct.category && (
+                                            <span className="badge-category">{selectedProduct.category}</span>
+                                        )}
+                                        <span className={`stock-badge stock-${getStockStatus(selectedProduct).color}`}>
+                                            {getStockStatus(selectedProduct).label}
+                                        </span>
                                     </div>
 
+                                    <h2>{selectedProduct.name}</h2>
+                                    <div className="modal-price">{formatPrice(selectedProduct.price_sale)}</div>
+
                                     {selectedProduct.description && (
-                                        <p className="product-modal-desc">
-                                            {selectedProduct.description}
-                                        </p>
+                                        <p className="modal-desc">{selectedProduct.description}</p>
                                     )}
 
+                                    <div className="modal-qty-section">
+                                        <span>Quantité</span>
+                                        <div className="qty-controls">
+                                            <button onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))} className="btn-qty">
+                                                <Minus size={18} />
+                                            </button>
+                                            <span className="qty-value">{modalQuantity}</span>
+                                            <button onClick={() => setModalQuantity(modalQuantity + 1)} className="btn-qty">
+                                                <Plus size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <button
-                                        className={`btn-add-cart ${addedId === selectedProduct.id ? 'added' : ''}`}
-                                        onClick={() => addToCart(selectedProduct)}
-                                        style={{ marginTop: 'auto', padding: '16px', fontSize: '1rem', width: '100%' }}
+                                        className={`btn-add-cart-big ${addedId === selectedProduct.id ? 'added' : ''}`}
+                                        onClick={() => {
+                                            addToCart(selectedProduct, modalQuantity);
+                                            setTimeout(() => setSelectedProduct(null), 600);
+                                        }}
+                                        disabled={!selectedProduct.is_active}
                                     >
                                         {addedId === selectedProduct.id ? (
-                                            <>
-                                                <Check size={20} />
-                                                <span>Ajouté au panier</span>
-                                            </>
+                                            <><Check size={20} /> Ajouté !</>
                                         ) : (
-                                            <>
-                                                <Plus size={20} />
-                                                <span>Ajouter au panier</span>
-                                            </>
+                                            <><ShoppingCart size={20} /> Ajouter • {formatPrice(selectedProduct.price_sale * modalQuantity)}</>
                                         )}
                                     </button>
                                 </div>
@@ -419,39 +772,25 @@ export default function ShopPage() {
                 )}
             </AnimatePresence>
 
-            {/* Floating Cart Trigger */}
+            {/* ===================== FLOATING CART ===================== */}
             <AnimatePresence>
                 {totalItems > 0 && (
                     <motion.div
-                        key="cart-bubble"
-                        initial={{ scale: 0, y: 50, x: '-50%' }}
-                        animate={{
-                            scale: 1,
-                            y: 0,
-                            x: '-50%',
-                            transition: { type: 'spring', stiffness: 260, damping: 20 }
-                        }}
-                        exit={{ scale: 0, y: 50, x: '-50%' }}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
                         className="cart-floating"
+                        initial={{ scale: 0, y: 50 }}
+                        animate={{ scale: 1, y: 0 }}
+                        exit={{ scale: 0, y: 50 }}
+                        whileTap={{ scale: 0.95 }}
                         onClick={() => setIsCartOpen(true)}
                     >
-                        <motion.div
-                            key={totalItems}
-                            initial={{ scale: 1.5 }}
-                            animate={{ scale: 1 }}
-                            className="cart-count"
-                        >
-                            {totalItems}
-                        </motion.div>
-                        <span className="font-bold">Voir mon panier • {totalAmount.toLocaleString()} GNF</span>
+                        <div className="cart-count">{totalItems}</div>
+                        <span>Panier • {totalAmount.toLocaleString()} GNF</span>
                         <ShoppingBag size={20} />
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Cart Bottom Sheet */}
+            {/* ===================== CART SHEET ===================== */}
             <AnimatePresence>
                 {isCartOpen && (
                     <>
@@ -464,241 +803,167 @@ export default function ShopPage() {
                         />
                         <motion.div
                             className="cart-sheet"
-                            initial={{ y: '100%', x: window.innerWidth > 1024 ? 0 : '-50%' }}
-                            animate={{ y: 0, x: window.innerWidth > 1024 ? 0 : '-50%' }}
-                            exit={{ y: '100%', x: window.innerWidth > 1024 ? 0 : '-50%' }}
-                            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                            initial={{ y: '100%' }}
+                            animate={{ y: 0 }}
+                            exit={{ y: '100%' }}
+                            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
                         >
                             <div className="cart-header">
-                                <div className="flex items-center gap-3">
-                                    <ShoppingCart size={24} className="text-primary" />
-                                    <h2 className="text-xl font-bold">Votre Panier</h2>
+                                <div className="cart-header-left">
+                                    <ShoppingCart size={22} />
+                                    <h2>Votre Panier</h2>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setIsCartOpen(false)}
-                                        className="btn-continue hidden md:flex"
-                                    >
-                                        <ArrowLeft size={16} />
-                                        <span>Continuer</span>
-                                    </button>
-                                    <button onClick={() => setIsCartOpen(false)} className="btn-qty">
-                                        <X size={24} />
+                                <div className="cart-header-right">
+                                    {cart.length > 0 && (
+                                        <button onClick={() => setShowShareModal(true)} className="btn-share-sm">
+                                            <Share2 size={16} />
+                                        </button>
+                                    )}
+                                    <button onClick={() => setIsCartOpen(false)} className="btn-close-cart">
+                                        <X size={22} />
                                     </button>
                                 </div>
                             </div>
 
                             <div className="cart-body">
                                 {orderSuccess ? (
-                                    <motion.div
-                                        initial={{ opacity: 0, scale: 0.9 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        className="success-screen"
-                                    >
-                                        <div className="success-icon">
-                                            <Check size={40} />
-                                        </div>
-                                        <h2 className="text-2xl font-black mb-2">Commande Reçue !</h2>
-                                        <p className="text-slate-500 mb-8 max-w-[280px] mx-auto">
-                                            Le vendeur a été notifié et vous contactera sur <b>WhatsApp</b> pour finaliser.
-                                        </p>
-                                        <motion.button
-                                            whileTap={{ scale: 0.95 }}
+                                    <div className="success-screen">
+                                        <div className="success-icon"><CheckCircle2 size={48} /></div>
+                                        <h2>Commande Reçue !</h2>
+                                        {submittedOrderId && (
+                                            <p className="order-ref">#{submittedOrderId.slice(0, 8).toUpperCase()}</p>
+                                        )}
+                                        <p>Le vendeur va vous contacter sur WhatsApp.</p>
+
+                                        <a
+                                            href={generateWhatsAppLink(submittedOrderId || undefined)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn-whatsapp"
+                                        >
+                                            <MessageCircle size={20} />
+                                            Envoyer sur WhatsApp
+                                            <ExternalLink size={16} />
+                                        </a>
+
+                                        <button
                                             onClick={() => {
                                                 setIsCartOpen(false);
                                                 setOrderSuccess(false);
+                                                setSubmittedOrderId(null);
                                             }}
-                                            className="btn-valider"
-                                            style={{ background: 'black' }}
+                                            className="btn-secondary"
                                         >
                                             Fermer
-                                        </motion.button>
-                                    </motion.div>
+                                        </button>
+                                    </div>
                                 ) : cart.length === 0 ? (
-                                    <motion.div
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        className="empty-cart-screen"
-                                    >
-                                        <div className="empty-cart-icon">
-                                            <ShoppingBag size={48} strokeWidth={1.5} />
-                                        </div>
-                                        <h3 className="text-xl font-bold mb-2">Votre panier est vide</h3>
-                                        <p className="text-slate-500 mb-8">Découvrez nos produits et commencez votre shopping !</p>
-                                        <button
-                                            onClick={() => setIsCartOpen(false)}
-                                            className="btn-valider"
-                                            style={{ background: 'var(--primary)', color: 'white' }}
-                                        >
+                                    <div className="empty-cart">
+                                        <ShoppingBag size={48} />
+                                        <h3>Panier vide</h3>
+                                        <p>Ajoutez des produits pour commencer</p>
+                                        <button onClick={() => setIsCartOpen(false)} className="btn-primary">
                                             Voir les produits
                                         </button>
-                                    </motion.div>
+                                    </div>
                                 ) : (
                                     <>
-                                        <div className="cart-items-container">
+                                        <div className="cart-items">
                                             {cart.map(item => (
                                                 <div key={item.product.id} className="cart-item">
                                                     {item.product.photo_url ? (
-                                                        <img src={item.product.photo_url} className="cart-item-img" alt={item.product.name} />
+                                                        <img src={item.product.photo_url} alt={item.product.name} />
                                                     ) : (
-                                                        <div className="cart-item-img bg-slate-100 flex items-center justify-center">
-                                                            <Store className="text-slate-300" size={20} />
-                                                        </div>
+                                                        <div className="cart-item-placeholder"><Store size={20} /></div>
                                                     )}
                                                     <div className="cart-item-info">
-                                                        <h4 className="font-bold">{item.product.name}</h4>
-                                                        <p className="font-bold text-primary">{(item.product.price_sale || 0).toLocaleString()} GNF</p>
+                                                        <h4>{item.product.name}</h4>
+                                                        <p>{(item.product.price_sale || 0).toLocaleString()} GNF</p>
                                                     </div>
                                                     <div className="qty-controls">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                if (navigator.vibrate) navigator.vibrate(30);
-                                                                updateQuantity(item.product.id, -1);
-                                                            }}
-                                                            className="btn-qty"
-                                                        >
-                                                            {item.quantity === 1 ? <Trash2 size={16} className="text-red-500" /> : <Minus size={16} />}
+                                                        <button onClick={() => updateQuantity(item.product.id, -1)} className="btn-qty">
+                                                            {item.quantity === 1 ? <Trash2 size={14} className="text-red" /> : <Minus size={14} />}
                                                         </button>
                                                         <input
                                                             type="number"
-                                                            className="qty-input"
                                                             value={item.quantity}
                                                             onChange={(e) => setManualQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                                                            className="qty-input"
                                                         />
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                if (navigator.vibrate) navigator.vibrate(30);
-                                                                updateQuantity(item.product.id, 1);
-                                                            }}
-                                                            className="btn-qty"
-                                                        >
-                                                            <Plus size={16} />
+                                                        <button onClick={() => updateQuantity(item.product.id, 1)} className="btn-qty">
+                                                            <Plus size={14} />
                                                         </button>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
 
-                                        <div className="mt-8">
-                                            <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-500 uppercase text-xs tracking-widest">
-                                                Mode de réception
-                                            </h3>
-                                            <div className="delivery-toggle mb-6">
+                                        <div className="cart-form">
+                                            <h3 className="section-title">📍 Mode de réception</h3>
+                                            <div className="delivery-toggle">
                                                 <button
-                                                    type="button"
-                                                    className={`toggle-item ${deliveryMethod === 'pickup' ? 'active' : ''}`}
+                                                    className={`toggle-btn ${deliveryMethod === 'pickup' ? 'active' : ''}`}
                                                     onClick={() => setDeliveryMethod('pickup')}
                                                 >
-                                                    <MapPin size={18} />
-                                                    <span>Retrait</span>
+                                                    <MapPin size={16} /> Retrait
                                                 </button>
                                                 <button
-                                                    type="button"
-                                                    className={`toggle-item ${deliveryMethod === 'delivery' ? 'active' : ''}`}
+                                                    className={`toggle-btn ${deliveryMethod === 'delivery' ? 'active' : ''}`}
                                                     onClick={() => setDeliveryMethod('delivery')}
                                                 >
-                                                    <Truck size={18} />
-                                                    <span>Livraison</span>
+                                                    <Truck size={16} /> Livraison
                                                 </button>
                                             </div>
 
-                                            <motion.div
-                                                key={deliveryMethod}
-                                                initial={{ opacity: 0, scale: 0.95 }}
-                                                animate={{ opacity: 1, scale: 1 }}
-                                                className="delivery-info-card"
-                                            >
-                                                {deliveryMethod === 'pickup' ? (
-                                                    <div className="flex gap-4 items-start">
-                                                        <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
-                                                            <MapPin size={24} />
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-bold text-blue-500 mb-1">Retrait en boutique</h4>
-                                                            <p className="text-sm text-slate-500 leading-relaxed">
-                                                                Votre commande sera préparée et mise de côté. Le vendeur vous contactera pour vous confirmer la disponibilité.
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex gap-4 items-start">
-                                                        <div className="p-3 bg-orange-500/10 rounded-xl text-orange-500">
-                                                            <Truck size={24} />
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-bold text-orange-500 mb-1">Livraison à domicile</h4>
-                                                            <p className="text-sm text-slate-500 leading-relaxed">
-                                                                Le vendeur vous contactera sur WhatsApp pour obtenir votre localisation précise et organiser l'expédition.
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </motion.div>
+                                            <h3 className="section-title">👤 Vos coordonnées</h3>
+                                            <p className="section-hint">Pas de compte nécessaire</p>
 
-                                            <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-500 uppercase text-xs tracking-widest">
-                                                Vos informations
-                                            </h3>
-                                            <form onSubmit={handleSubmitOrder} className="space-y-3">
-                                                <input
-                                                    className="input-minimal"
-                                                    placeholder="Votre nom complet"
-                                                    required
-                                                    value={customerInfo.name}
-                                                    onChange={e => setCustomerInfo({ ...customerInfo, name: e.target.value })}
-                                                />
-                                                <input
-                                                    className="input-minimal"
-                                                    type="tel"
-                                                    placeholder="Numéro WhatsApp (ex: +225...)"
-                                                    required
-                                                    value={customerInfo.phone}
-                                                    onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                                                />
-
+                                            <form onSubmit={handleSubmitOrder}>
+                                                <div className="input-group">
+                                                    <Users size={16} className="input-icon" />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Votre nom"
+                                                        required
+                                                        value={customerInfo.name}
+                                                        onChange={e => setCustomerInfo({ ...customerInfo, name: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="input-group">
+                                                    <Phone size={16} className="input-icon" />
+                                                    <input
+                                                        type="tel"
+                                                        placeholder="Numéro WhatsApp"
+                                                        required
+                                                        value={customerInfo.phone}
+                                                        onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                                                    />
+                                                </div>
                                                 <textarea
-                                                    className="textarea-minimal"
-                                                    placeholder="Message pour le vendeur (optionnel)..."
+                                                    placeholder="Message (optionnel)"
                                                     rows={2}
                                                     value={orderNote}
                                                     onChange={e => setOrderNote(e.target.value)}
                                                 />
 
-                                                <div className="checkout-section mt-6 rounded-2xl">
+                                                <div className="checkout-box">
                                                     <div className="total-row">
-                                                        <span className="total-label">Total à payer</span>
-                                                        <span className="total-value">{totalAmount.toLocaleString()} GNF</span>
+                                                        <span>Total</span>
+                                                        <span className="total-amount">{totalAmount.toLocaleString()} GNF</span>
                                                     </div>
 
-                                                    <motion.button
-                                                        type="submit"
-                                                        disabled={isSubmitting}
-                                                        whileTap={{ scale: 0.98 }}
-                                                        className="btn-valider"
-                                                    >
-                                                        {isSubmitting ? <Loader2 className="animate-spin" /> : (
-                                                            <>
-                                                                <span>Confirmer la commande</span>
-                                                                <ArrowRight size={20} />
-                                                            </>
+                                                    <button type="submit" className="btn-checkout" disabled={isSubmitting}>
+                                                        {isSubmitting ? (
+                                                            <Loader2 className="animate-spin" size={20} />
+                                                        ) : (
+                                                            <>Confirmer <ArrowRight size={18} /></>
                                                         )}
-                                                    </motion.button>
+                                                    </button>
 
-                                                    <div className="reassurance-text">
-                                                        <Check size={14} className="inline mr-1 text-green-500" />
-                                                        Paiement sécurisé au retrait/livraison
-                                                    </div>
+                                                    <p className="reassurance">
+                                                        <Check size={12} /> Paiement à la livraison
+                                                    </p>
                                                 </div>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsCartOpen(false)}
-                                                    className="btn-outline mt-4 mb-8"
-                                                >
-                                                    <ArrowLeft size={18} />
-                                                    Continuer mes achats
-                                                </button>
                                             </form>
                                         </div>
                                     </>
@@ -709,8 +974,51 @@ export default function ShopPage() {
                 )}
             </AnimatePresence>
 
-            <footer className="py-20 text-center opacity-30">
-                <p>Créé avec Velmo</p>
+            {/* ===================== SHARE MODAL ===================== */}
+            <AnimatePresence>
+                {showShareModal && (
+                    <>
+                        <motion.div
+                            className="modal-overlay"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowShareModal(false)}
+                        />
+                        <motion.div
+                            className="share-modal"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                        >
+                            <h3>Partager mon panier</h3>
+                            <p>Envoyez votre sélection à un ami</p>
+
+                            <a
+                                href={generateShareCartLink()}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn-whatsapp"
+                            >
+                                <MessageCircle size={18} />
+                                Partager sur WhatsApp
+                            </a>
+
+                            <button onClick={() => copyToClipboard(window.location.href)} className="btn-secondary">
+                                {copiedLink ? <><Check size={16} /> Copié !</> : <><Copy size={16} /> Copier le lien</>}
+                            </button>
+
+                            <button onClick={() => setShowShareModal(false)} className="btn-text">
+                                Fermer
+                            </button>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+
+            {/* ===================== FOOTER ===================== */}
+            <footer className="shop-footer">
+                <p>Propulsé par <span className="velmo-brand">Velmo</span></p>
             </footer>
         </div>
     );

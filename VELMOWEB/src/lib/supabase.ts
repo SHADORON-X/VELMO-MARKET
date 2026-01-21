@@ -14,9 +14,17 @@ export interface Shop {
   name: string;
   slug: string;
   logo_url: string | null;
+  cover_url: string | null;  // 🆕 Cover image from Desktop
   description: string | null;
   is_public: boolean;
   currency: string;
+  // 🆕 Marketplace Fields
+  location?: string | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  opening_hours?: string | null;
+  is_verified?: boolean;
+  orders_count?: number;
 }
 
 export interface Product {
@@ -29,6 +37,10 @@ export interface Product {
   is_visible: boolean;
   description: string | null;
   category: string | null;
+  // 🆕 Marketplace Fields
+  stock_quantity?: number | null;
+  is_popular?: boolean;
+  created_at?: string;
 }
 
 export interface CustomerOrder {
