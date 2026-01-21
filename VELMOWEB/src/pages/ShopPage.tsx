@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import type { Shop, Product } from '../lib/supabase';
 import {
     ShoppingBag, Plus, Minus, Trash2, X, Check, Loader2, Store, ArrowRight, ShoppingCart,
-    Moon, Sun, ArrowLeft, MapPin, Truck, Search, Clock, Phone, Heart, Share2, MessageCircle,
+    Moon, Sun, MapPin, Truck, Search, Clock, Phone, Heart, Share2, MessageCircle,
     Shield, CreditCard, Users, Star, Filter, ChevronDown, ExternalLink, Copy, CheckCircle2, BadgeCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
