@@ -1326,3 +1326,78 @@ body::after {
   width: 100%;
 }
 
+
+/* ?? Delivery Cards */
+.delivery-info-card {
+  background: var(--cart-item-bg);
+  border: 1px solid var(--cart-border);
+  padding: 20px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+  transition: all 0.3s ease;
+}
+
+.delivery-toggle {
+  background: var(--cart-item-bg);
+  padding: 6px;
+  border-radius: 16px;
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  border: 1px solid var(--cart-border);
+}
+
+.toggle-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.toggle-item.active {
+  background: var(--cart-bg);
+  color: var(--text-main);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: var(--cart-border);
+}
+
+.toggle-item:hover:not(.active) {
+  background: rgba(255,255,255,0.05);
+}
+
+
+/* ?? PREMIUM CARD BORDERS & GLOW */
+.product-card {
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.product-card:hover {
+  border-color: var(--primary) !important;
+  box-shadow: 0 12px 40px -8px rgba(255, 85, 0, 0.4);
+}
+
+.delivery-info-card, .cart-sheet {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.cart-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Floating Cart Button Polish */
+.cart-floating {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+}
+

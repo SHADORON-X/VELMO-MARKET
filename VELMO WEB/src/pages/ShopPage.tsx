@@ -445,7 +445,7 @@ export default function ShopPage() {
                         >
                             {totalItems}
                         </motion.div>
-                        <span className="font-bold">Voir mon panier • {totalAmount.toLocaleString()} {shop.currency}</span>
+                        <span className="font-bold">Voir mon panier • {totalAmount.toLocaleString()} GNF</span>
                         <ShoppingBag size={20} />
                     </motion.div>
                 )}
@@ -547,7 +547,7 @@ export default function ShopPage() {
                                                     )}
                                                     <div className="cart-item-info">
                                                         <h4 className="font-bold">{item.product.name}</h4>
-                                                        <p className="font-bold text-primary">{(item.product.price_sale || 0).toLocaleString()} {shop.currency}</p>
+                                                        <p className="font-bold text-primary">{(item.product.price_sale || 0).toLocaleString()} GNF</p>
                                                     </div>
                                                     <div className="qty-controls">
                                                         <button
@@ -606,24 +606,34 @@ export default function ShopPage() {
 
                                             <motion.div
                                                 key={deliveryMethod}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className="bg-primary/5 p-4 rounded-2xl mb-6 text-sm flex items-start gap-3 border border-primary/10"
+                                                initial={{ opacity: 0, scale: 0.95 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                className="delivery-info-card"
                                             >
                                                 {deliveryMethod === 'pickup' ? (
-                                                    <>
-                                                        <MapPin size={18} className="text-primary shrink-0" />
-                                                        <p className="font-medium text-slate-600 dark:text-slate-300">
-                                                            <b>Retrait en boutique</b> : Vous récupérez votre commande directement sur place. Le vendeur vous confirmera quand elle est prête.
-                                                        </p>
-                                                    </>
+                                                    <div className="flex gap-4 items-start">
+                                                        <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
+                                                            <MapPin size={24} />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-blue-500 mb-1">Retrait en boutique</h4>
+                                                            <p className="text-sm text-slate-500 leading-relaxed">
+                                                                Votre commande sera préparée et mise de côté. Le vendeur vous contactera pour vous confirmer la disponibilité.
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                 ) : (
-                                                    <>
-                                                        <Truck size={18} className="text-primary shrink-0" />
-                                                        <p className="font-medium text-slate-600 dark:text-slate-300">
-                                                            <b>Livraison</b> : Pas d'adresse à taper ici. Le vendeur vous contactera pour organiser le transport et confirmer les frais.
-                                                        </p>
-                                                    </>
+                                                    <div className="flex gap-4 items-start">
+                                                        <div className="p-3 bg-orange-500/10 rounded-xl text-orange-500">
+                                                            <Truck size={24} />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-orange-500 mb-1">Livraison à domicile</h4>
+                                                            <p className="text-sm text-slate-500 leading-relaxed">
+                                                                Le vendeur vous contactera sur WhatsApp pour obtenir votre localisation précise et organiser l'expédition.
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </motion.div>
 
@@ -658,7 +668,7 @@ export default function ShopPage() {
                                                 <div className="checkout-section mt-6 rounded-2xl">
                                                     <div className="total-row">
                                                         <span className="total-label">Total à payer</span>
-                                                        <span className="total-value">{totalAmount.toLocaleString()} {shop.currency}</span>
+                                                        <span className="total-value">{totalAmount.toLocaleString()} GNF</span>
                                                     </div>
 
                                                     <motion.button
