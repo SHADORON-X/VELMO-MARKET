@@ -135,31 +135,57 @@ export default function ShopPage() {
     const loadShopData = async () => {
         try {
             setLoading(true);
+            console.log('🔍 Chargement de la boutique pour le slug:', slug);
+
             const { data: shopData, error: shopError } = await supabase
                 .from('shops')
                 .select('*')
-                .ilike('slug', slug || '') // Case-insensitive match 🔍
-                .eq('is_public', true)
+                .ilike('slug', slug || '')
                 .single();
 
-            if (shopError || !shopData) throw new Error('Boutique introuvable');
+            if (shopError || !shopData) {
+                console.error('❌ Boutique introuvable:', shopError);
+                throw new Error('Boutique introuvable');
+            }
+
+            console.log('✅ Boutique trouvée:', shopData);
             setShop(shopData);
 
+            // Charger les produits - On retire le filtre strict is_active pour voir si c'est lui qui bloque
             const { data: productData, error: productError } = await supabase
                 .from('products')
                 .select('*')
                 .eq('shop_id', shopData.id)
-                .eq('is_visible', true)
-                .eq('is_active', true)
                 .order('name');
 
             if (productError) throw productError;
-            setProducts(productData || []);
+
+            // Debug: Afficher les produits et leurs URLs
+            console.log('📦 Produits chargés:', productData?.length, productData);
+
+            // Filtre côté client pour plus de flexibilité si besoin
+            const activeProducts = productData?.filter(p => p.is_active !== false) || [];
+            setProducts(activeProducts);
+
         } catch (err) {
-            console.error(err);
+            console.error('💥 Erreur chargement:', err);
         } finally {
             setLoading(false);
         }
+    };
+
+    // 🖼️ Helper pour construire l'URL de l'image Supabase
+    const getPublicImageUrl = (path: string | null | undefined) => {
+        if (!path) return null;
+        if (path.startsWith('http')) return path;
+
+        const bucket = 'velmo-media';
+        const projectUrl = import.meta.env.VITE_SUPABASE_URL;
+
+        // Nettoyer le path au cas où
+        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+
+        return `${projectUrl}/storage/v1/object/public/${bucket}/${cleanPath}`;
     };
 
     const addToCart = (product: Product, quantity: number = 1) => {
@@ -302,6 +328,7 @@ ${itemsList}
                 total_amount: totalAmount,
                 customer_name: customerInfo.name,
                 customer_phone: customerInfo.phone,
+                customer_address: deliveryMethod === 'delivery' ? orderNote : null, // Si livraison, la note sert d'adresse
                 order_note: orderNote,
                 delivery_method: deliveryMethod,
                 status: 'pending'
@@ -426,7 +453,7 @@ ${itemsList}
                 {/* 🖼️ COVER IMAGE (NEW!) */}
                 {shop.cover_url && (
                     <div className="shop-cover">
-                        <img src={shop.cover_url} alt={`Couverture ${shop.name}`} />
+                        <img src={getPublicImageUrl(shop.cover_url) || ''} alt={`Couverture ${shop.name}`} />
                         <div className="shop-cover-overlay"></div>
                     </div>
                 )}
@@ -435,7 +462,7 @@ ${itemsList}
                     {/* Logo Boutique */}
                     {shop.logo_url && (
                         <div className="shop-logo-container">
-                            <img src={shop.logo_url} alt={shop.name} className="shop-logo" />
+                            <img src={getPublicImageUrl(shop.logo_url) || ''} alt={shop.name} className="shop-logo" />
                         </div>
                     )}
 
@@ -598,12 +625,21 @@ ${itemsList}
                                 }}
                             >
                                 <div className="card-img-container">
-                                    {product.photo_url ? (
-                                        <img src={product.photo_url} alt={product.name} loading="lazy" />
+                                    {(product.photo_url || (product as any).image_url) ? (
+                                        <img
+                                            src={getPublicImageUrl(product.photo_url || (product as any).image_url) || ''}
+                                            alt={product.name}
+                                            onLoad={() => {
+                                                // Optional: Log success
+                                            }}
+                                            onError={(e) => {
+                                                console.error(`❌ Erreur chargement image: ${product.name}`);
+                                                (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                        />
                                     ) : (
                                         <Store size={40} className="placeholder-icon" />
                                     )}
-
                                     {/* Favorite */}
                                     <button
                                         className={`favorite-btn ${isFavorite ? 'active' : ''}`}
@@ -632,21 +668,49 @@ ${itemsList}
                                     <h3 className="product-title">{product.name}</h3>
                                     <div className="product-price">{formatPrice(product.price_sale)}</div>
 
-                                    {product.is_active && (
-                                        <button
-                                            className={`btn-add-cart ${addedId === product.id ? 'added' : ''}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                addToCart(product);
-                                            }}
-                                        >
-                                            {addedId === product.id ? (
-                                                <><Check size={16} /> Ajouté</>
-                                            ) : (
-                                                <><Plus size={16} /> Ajouter</>
-                                            )}
-                                        </button>
-                                    )}
+                                    {product.is_active && (() => {
+                                        const cartItem = cart.find(item => item.product.id === product.id);
+                                        const quantity = cartItem ? cartItem.quantity : 0;
+
+                                        if (quantity > 0) {
+                                            return (
+                                                <div
+                                                    className="btn-add-cart qty-mode"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <button
+                                                        className="qty-btn-mini"
+                                                        onClick={() => updateQuantity(product.id, -1)}
+                                                    >
+                                                        <Minus size={16} />
+                                                    </button>
+                                                    <span className="qty-display">{quantity}</span>
+                                                    <button
+                                                        className="qty-btn-mini"
+                                                        onClick={() => updateQuantity(product.id, 1)}
+                                                    >
+                                                        <Plus size={16} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <button
+                                                className={`btn-add-cart ${addedId === product.id ? 'added' : ''}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    addToCart(product);
+                                                }}
+                                            >
+                                                {addedId === product.id ? (
+                                                    <><Check size={16} /> Ajouté</>
+                                                ) : (
+                                                    <><Plus size={16} /> Ajouter</>
+                                                )}
+                                            </button>
+                                        );
+                                    })()}
                                 </div>
                             </motion.div>
                         );
@@ -663,7 +727,7 @@ ${itemsList}
             </main>
 
             {/* ===================== TRUST SECTION ===================== */}
-            <section className="trust-section">
+            < section className="trust-section" >
                 <h3>Pourquoi commander chez nous ?</h3>
                 <div className="trust-grid">
                     <div className="trust-card">
@@ -682,344 +746,365 @@ ${itemsList}
                         <p>Assistance 7j/7</p>
                     </div>
                 </div>
-            </section>
+            </section >
 
             {/* ===================== PRODUCT MODAL ===================== */}
             <AnimatePresence>
-                {selectedProduct && (
-                    <>
-                        <motion.div
-                            className="modal-overlay"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setSelectedProduct(null)}
-                        />
-                        <div className="product-modal-container">
+                {
+                    selectedProduct && (
+                        <>
                             <motion.div
-                                className="product-modal"
-                                initial={{ y: '100%' }}
-                                animate={{ y: 0 }}
-                                exit={{ y: '100%' }}
-                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                            >
-                                <button className="btn-close" onClick={() => setSelectedProduct(null)}>
-                                    <X size={24} />
-                                </button>
-                                <button
-                                    className="btn-share"
-                                    onClick={() => window.open(generateShareProductLink(selectedProduct), '_blank')}
+                                className="product-modal-overlay"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setSelectedProduct(null)}
+                            />
+                            <div className="product-modal-container">
+                                <motion.div
+                                    className="product-modal-content"
+                                    initial={{ y: '100%' }}
+                                    animate={{ y: 0 }}
+                                    exit={{ y: '100%' }}
+                                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                                 >
-                                    <Share2 size={18} />
-                                </button>
-
-                                <div className="modal-image">
-                                    {selectedProduct.photo_url ? (
-                                        <img src={selectedProduct.photo_url} alt={selectedProduct.name} />
-                                    ) : (
-                                        <Store size={64} className="text-slate-300" />
-                                    )}
-                                </div>
-
-                                <div className="modal-info">
-                                    <div className="modal-badges">
-                                        {selectedProduct.category && (
-                                            <span className="badge-category">{selectedProduct.category}</span>
-                                        )}
-                                        <span className={`stock-badge stock-${getStockStatus(selectedProduct).color}`}>
-                                            {getStockStatus(selectedProduct).label}
-                                        </span>
-                                    </div>
-
-                                    <h2>{selectedProduct.name}</h2>
-                                    <div className="modal-price">{formatPrice(selectedProduct.price_sale)}</div>
-
-                                    {selectedProduct.description && (
-                                        <p className="modal-desc">{selectedProduct.description}</p>
-                                    )}
-
-                                    <div className="modal-qty-section">
-                                        <span>Quantité</span>
-                                        <div className="qty-controls">
-                                            <button onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))} className="btn-qty">
-                                                <Minus size={18} />
-                                            </button>
-                                            <span className="qty-value">{modalQuantity}</span>
-                                            <button onClick={() => setModalQuantity(modalQuantity + 1)} className="btn-qty">
-                                                <Plus size={18} />
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        className={`btn-add-cart-big ${addedId === selectedProduct.id ? 'added' : ''}`}
-                                        onClick={() => {
-                                            addToCart(selectedProduct, modalQuantity);
-                                            setTimeout(() => setSelectedProduct(null), 600);
-                                        }}
-                                        disabled={!selectedProduct.is_active}
-                                    >
-                                        {addedId === selectedProduct.id ? (
-                                            <><Check size={20} /> Ajouté !</>
-                                        ) : (
-                                            <><ShoppingCart size={20} /> Ajouter • {formatPrice(selectedProduct.price_sale * modalQuantity)}</>
-                                        )}
+                                    <button className="btn-close-modal" onClick={() => setSelectedProduct(null)}>
+                                        <X size={24} />
                                     </button>
-                                </div>
-                            </motion.div>
-                        </div>
-                    </>
-                )}
-            </AnimatePresence>
+                                    <button
+                                        className="btn-share-modal"
+                                        onClick={() => window.open(generateShareProductLink(selectedProduct), '_blank')}
+                                    >
+                                        <Share2 size={18} />
+                                    </button>
+
+                                    <div className="product-modal-img">
+                                        {(selectedProduct.photo_url || (selectedProduct as any).image_url) ? (
+                                            <img
+                                                src={getPublicImageUrl(selectedProduct.photo_url || (selectedProduct as any).image_url) || ''}
+                                                alt={selectedProduct.name}
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                }}
+                                            />
+                                        ) : (
+                                            <Store size={64} className="text-slate-300" />
+                                        )}
+                                    </div>
+
+                                    <div className="product-modal-info">
+                                        <div className="modal-badges">
+                                            {selectedProduct.category && (
+                                                <span className="modal-category">{selectedProduct.category}</span>
+                                            )}
+                                            <span className={`stock-badge stock-${getStockStatus(selectedProduct).color}`}>
+                                                {getStockStatus(selectedProduct).label}
+                                            </span>
+                                        </div>
+
+                                        <h2>{selectedProduct.name}</h2>
+                                        <div className="product-modal-price">{formatPrice(selectedProduct.price_sale)}</div>
+
+                                        {selectedProduct.description && (
+                                            <p className="product-modal-desc">{selectedProduct.description}</p>
+                                        )}
+
+                                        <div className="modal-qty-section">
+                                            <span>Quantité</span>
+                                            <div className="qty-controls">
+                                                <button onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))} className="btn-qty">
+                                                    <Minus size={18} />
+                                                </button>
+                                                <span className="qty-value">{modalQuantity}</span>
+                                                <button onClick={() => setModalQuantity(modalQuantity + 1)} className="btn-qty">
+                                                    <Plus size={18} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            className={`btn-add-cart-big ${addedId === selectedProduct.id ? 'added' : ''}`}
+                                            onClick={() => {
+                                                addToCart(selectedProduct, modalQuantity);
+                                                setTimeout(() => setSelectedProduct(null), 600);
+                                            }}
+                                            disabled={!selectedProduct.is_active}
+                                        >
+                                            {addedId === selectedProduct.id ? (
+                                                <><Check size={20} /> Ajouté !</>
+                                            ) : (
+                                                <><ShoppingCart size={20} /> Ajouter • {formatPrice(selectedProduct.price_sale * modalQuantity)}</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            </div>
+                        </>
+                    )
+                }
+            </AnimatePresence >
 
             {/* ===================== FLOATING CART ===================== */}
             <AnimatePresence>
-                {totalItems > 0 && (
-                    <motion.div
-                        className="cart-floating"
-                        initial={{ scale: 0, y: 50 }}
-                        animate={{ scale: 1, y: 0 }}
-                        exit={{ scale: 0, y: 50 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setIsCartOpen(true)}
-                    >
-                        <div className="cart-count">{totalItems}</div>
-                        <span>Panier • {totalAmount.toLocaleString()} GNF</span>
-                        <ShoppingBag size={20} />
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                {
+                    totalItems > 0 && (
+                        <motion.div
+                            className="cart-floating"
+                            initial={{ scale: 0, y: 50 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0, y: 50 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => setIsCartOpen(true)}
+                        >
+                            <div className="cart-count">{totalItems}</div>
+                            <span>Panier • {totalAmount.toLocaleString()} GNF</span>
+                            <ShoppingBag size={20} />
+                        </motion.div>
+                    )
+                }
+            </AnimatePresence >
 
             {/* ===================== CART SHEET ===================== */}
             <AnimatePresence>
-                {isCartOpen && (
-                    <>
-                        <motion.div
-                            className="cart-overlay"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsCartOpen(false)}
-                        />
-                        <motion.div
-                            className="cart-sheet"
-                            initial={{ y: '100%' }}
-                            animate={{ y: 0 }}
-                            exit={{ y: '100%' }}
-                            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-                        >
-                            <div className="cart-header">
-                                <div className="cart-header-left">
-                                    <ShoppingCart size={22} />
-                                    <h2>Votre Panier</h2>
-                                </div>
-                                <div className="cart-header-right">
-                                    {cart.length > 0 && (
-                                        <button onClick={() => setShowShareModal(true)} className="btn-share-sm">
-                                            <Share2 size={16} />
-                                        </button>
-                                    )}
-                                    <button onClick={() => setIsCartOpen(false)} className="btn-close-cart">
-                                        <X size={22} />
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="cart-body">
-                                {orderSuccess ? (
-                                    <div className="success-screen">
-                                        <div className="success-icon"><CheckCircle2 size={48} /></div>
-                                        <h2>Commande Reçue !</h2>
-                                        {submittedOrderId && (
-                                            <p className="order-ref">#{submittedOrderId.slice(0, 8).toUpperCase()}</p>
+                {
+                    isCartOpen && (
+                        <>
+                            <motion.div
+                                className="cart-overlay"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsCartOpen(false)}
+                            />
+                            <motion.div
+                                className="cart-sheet"
+                                initial={{ y: '100%' }}
+                                animate={{ y: 0 }}
+                                exit={{ y: '100%' }}
+                                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                            >
+                                <div className="cart-header">
+                                    <div className="cart-header-left">
+                                        <ShoppingCart size={22} />
+                                        <h2>Votre Panier</h2>
+                                    </div>
+                                    <div className="cart-header-right">
+                                        {cart.length > 0 && (
+                                            <button onClick={() => setShowShareModal(true)} className="btn-share-sm">
+                                                <Share2 size={16} />
+                                            </button>
                                         )}
-                                        <p>Le vendeur va vous contacter sur WhatsApp.</p>
-
-                                        <a
-                                            href={generateWhatsAppLink(submittedOrderId || undefined)}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="btn-whatsapp"
-                                        >
-                                            <MessageCircle size={20} />
-                                            Envoyer sur WhatsApp
-                                            <ExternalLink size={16} />
-                                        </a>
-
-                                        <button
-                                            onClick={() => {
-                                                setIsCartOpen(false);
-                                                setOrderSuccess(false);
-                                                setSubmittedOrderId(null);
-                                            }}
-                                            className="btn-secondary"
-                                        >
-                                            Fermer
+                                        <button onClick={() => setIsCartOpen(false)} className="btn-close-cart">
+                                            <X size={22} />
                                         </button>
                                     </div>
-                                ) : cart.length === 0 ? (
-                                    <div className="empty-cart">
-                                        <ShoppingBag size={48} />
-                                        <h3>Panier vide</h3>
-                                        <p>Ajoutez des produits pour commencer</p>
-                                        <button onClick={() => setIsCartOpen(false)} className="btn-primary">
-                                            Voir les produits
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="cart-items">
-                                            {cart.map(item => (
-                                                <div key={item.product.id} className="cart-item">
-                                                    {item.product.photo_url ? (
-                                                        <img src={item.product.photo_url} alt={item.product.name} />
-                                                    ) : (
-                                                        <div className="cart-item-placeholder"><Store size={20} /></div>
-                                                    )}
-                                                    <div className="cart-item-info">
-                                                        <h4>{item.product.name}</h4>
-                                                        <p>{(item.product.price_sale || 0).toLocaleString()} GNF</p>
-                                                    </div>
-                                                    <div className="qty-controls">
-                                                        <button onClick={() => updateQuantity(item.product.id, -1)} className="btn-qty">
-                                                            {item.quantity === 1 ? <Trash2 size={14} className="text-red" /> : <Minus size={14} />}
-                                                        </button>
-                                                        <input
-                                                            type="number"
-                                                            value={item.quantity}
-                                                            onChange={(e) => setManualQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                                                            className="qty-input"
-                                                        />
-                                                        <button onClick={() => updateQuantity(item.product.id, 1)} className="btn-qty">
-                                                            <Plus size={14} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                </div>
+
+                                <div className="cart-body">
+                                    {orderSuccess ? (
+                                        <div className="success-screen">
+                                            <div className="success-icon"><CheckCircle2 size={48} /></div>
+                                            <h2>Commande Reçue !</h2>
+                                            {submittedOrderId && (
+                                                <p className="order-ref">#{submittedOrderId.slice(0, 8).toUpperCase()}</p>
+                                            )}
+                                            <p>Le vendeur va vous contacter sur WhatsApp.</p>
+
+                                            <a
+                                                href={generateWhatsAppLink(submittedOrderId || undefined)}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="btn-whatsapp"
+                                            >
+                                                <MessageCircle size={20} />
+                                                Envoyer sur WhatsApp
+                                                <ExternalLink size={16} />
+                                            </a>
+
+                                            <button
+                                                onClick={() => {
+                                                    setIsCartOpen(false);
+                                                    setOrderSuccess(false);
+                                                    setSubmittedOrderId(null);
+                                                }}
+                                                className="btn-secondary"
+                                            >
+                                                Fermer
+                                            </button>
                                         </div>
-
-                                        <div className="cart-form">
-                                            <h3 className="section-title">📍 Mode de réception</h3>
-                                            <div className="delivery-toggle">
-                                                <button
-                                                    className={`toggle-btn ${deliveryMethod === 'pickup' ? 'active' : ''}`}
-                                                    onClick={() => setDeliveryMethod('pickup')}
-                                                >
-                                                    <MapPin size={16} /> Retrait
-                                                </button>
-                                                <button
-                                                    className={`toggle-btn ${deliveryMethod === 'delivery' ? 'active' : ''}`}
-                                                    onClick={() => setDeliveryMethod('delivery')}
-                                                >
-                                                    <Truck size={16} /> Livraison
-                                                </button>
+                                    ) : cart.length === 0 ? (
+                                        <div className="empty-cart">
+                                            <ShoppingBag size={48} />
+                                            <h3>Panier vide</h3>
+                                            <p>Ajoutez des produits pour commencer</p>
+                                            <button onClick={() => setIsCartOpen(false)} className="btn-primary">
+                                                Voir les produits
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="cart-items">
+                                                {cart.map(item => (
+                                                    <div key={item.product.id} className="cart-item">
+                                                        {(item.product.photo_url || (item.product as any).image_url) ? (
+                                                            <img
+                                                                src={getPublicImageUrl(item.product.photo_url || (item.product as any).image_url) || ''}
+                                                                alt={item.product.name}
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div className="cart-item-placeholder"><Store size={20} /></div>
+                                                        )}
+                                                        <div className="cart-item-info">
+                                                            <h4>{item.product.name}</h4>
+                                                            <p>{(item.product.price_sale || 0).toLocaleString()} GNF</p>
+                                                        </div>
+                                                        <div className="qty-controls">
+                                                            <button onClick={() => updateQuantity(item.product.id, -1)} className="btn-qty">
+                                                                {item.quantity === 1 ? <Trash2 size={14} className="text-red" /> : <Minus size={14} />}
+                                                            </button>
+                                                            <input
+                                                                type="number"
+                                                                value={item.quantity}
+                                                                onChange={(e) => setManualQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                                                                className="qty-input"
+                                                            />
+                                                            <button onClick={() => updateQuantity(item.product.id, 1)} className="btn-qty">
+                                                                <Plus size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
 
-                                            <h3 className="section-title">👤 Vos coordonnées</h3>
-                                            <p className="section-hint">Pas de compte nécessaire</p>
-
-                                            <form onSubmit={handleSubmitOrder}>
-                                                <div className="input-group">
-                                                    <Users size={16} className="input-icon" />
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Votre nom"
-                                                        required
-                                                        value={customerInfo.name}
-                                                        onChange={e => setCustomerInfo({ ...customerInfo, name: e.target.value })}
-                                                    />
-                                                </div>
-                                                <div className="input-group">
-                                                    <Phone size={16} className="input-icon" />
-                                                    <input
-                                                        type="tel"
-                                                        placeholder="Numéro WhatsApp"
-                                                        required
-                                                        value={customerInfo.phone}
-                                                        onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                                                    />
-                                                </div>
-                                                <textarea
-                                                    placeholder="Message (optionnel)"
-                                                    rows={2}
-                                                    value={orderNote}
-                                                    onChange={e => setOrderNote(e.target.value)}
-                                                />
-
-                                                <div className="checkout-box">
-                                                    <div className="total-row">
-                                                        <span>Total</span>
-                                                        <span className="total-amount">{totalAmount.toLocaleString()} GNF</span>
-                                                    </div>
-
-                                                    <button type="submit" className="btn-checkout" disabled={isSubmitting}>
-                                                        {isSubmitting ? (
-                                                            <Loader2 className="animate-spin" size={20} />
-                                                        ) : (
-                                                            <>Confirmer <ArrowRight size={18} /></>
-                                                        )}
+                                            <div className="cart-form">
+                                                <h3 className="section-title">📍 Mode de réception</h3>
+                                                <div className="delivery-toggle">
+                                                    <button
+                                                        className={`toggle-btn ${deliveryMethod === 'pickup' ? 'active' : ''}`}
+                                                        onClick={() => setDeliveryMethod('pickup')}
+                                                    >
+                                                        <MapPin size={16} /> Retrait
                                                     </button>
-
-                                                    <p className="reassurance">
-                                                        <Check size={12} /> Paiement à la livraison
-                                                    </p>
+                                                    <button
+                                                        className={`toggle-btn ${deliveryMethod === 'delivery' ? 'active' : ''}`}
+                                                        onClick={() => setDeliveryMethod('delivery')}
+                                                    >
+                                                        <Truck size={16} /> Livraison
+                                                    </button>
                                                 </div>
-                                            </form>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+
+                                                <h3 className="section-title">👤 Vos coordonnées</h3>
+                                                <p className="section-hint">Pas de compte nécessaire</p>
+
+                                                <form onSubmit={handleSubmitOrder}>
+                                                    <div className="input-group">
+                                                        <Users size={16} className="input-icon" />
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Votre nom"
+                                                            required
+                                                            value={customerInfo.name}
+                                                            onChange={e => setCustomerInfo({ ...customerInfo, name: e.target.value })}
+                                                        />
+                                                    </div>
+                                                    <div className="input-group">
+                                                        <Phone size={16} className="input-icon" />
+                                                        <input
+                                                            type="tel"
+                                                            placeholder="Numéro WhatsApp"
+                                                            required
+                                                            value={customerInfo.phone}
+                                                            onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                                                        />
+                                                    </div>
+                                                    <textarea
+                                                        placeholder={deliveryMethod === 'delivery' ? "Adresse précise de livraison" : "Message ou instructions (optionnel)"}
+                                                        rows={2}
+                                                        required={deliveryMethod === 'delivery'}
+                                                        value={orderNote}
+                                                        onChange={e => setOrderNote(e.target.value)}
+                                                    />
+
+                                                    <div className="checkout-box">
+                                                        <div className="total-row">
+                                                            <span>Total</span>
+                                                            <span className="total-amount">{totalAmount.toLocaleString()} GNF</span>
+                                                        </div>
+
+                                                        <button type="submit" className="btn-checkout" disabled={isSubmitting}>
+                                                            {isSubmitting ? (
+                                                                <Loader2 className="animate-spin" size={20} />
+                                                            ) : (
+                                                                <>Confirmer <ArrowRight size={18} /></>
+                                                            )}
+                                                        </button>
+
+                                                        <p className="reassurance">
+                                                            <Check size={12} /> Paiement à la livraison
+                                                        </p>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </motion.div>
+                        </>
+                    )
+                }
+            </AnimatePresence >
 
             {/* ===================== SHARE MODAL ===================== */}
             <AnimatePresence>
-                {showShareModal && (
-                    <>
-                        <motion.div
-                            className="modal-overlay"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setShowShareModal(false)}
-                        />
-                        <motion.div
-                            className="share-modal"
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                        >
-                            <h3>Partager mon panier</h3>
-                            <p>Envoyez votre sélection à un ami</p>
-
-                            <a
-                                href={generateShareCartLink()}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn-whatsapp"
+                {
+                    showShareModal && (
+                        <>
+                            <motion.div
+                                className="modal-overlay"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowShareModal(false)}
+                            />
+                            <motion.div
+                                className="share-modal"
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.9, opacity: 0 }}
                             >
-                                <MessageCircle size={18} />
-                                Partager sur WhatsApp
-                            </a>
+                                <h3>Partager mon panier</h3>
+                                <p>Envoyez votre sélection à un ami</p>
 
-                            <button onClick={() => copyToClipboard(window.location.href)} className="btn-secondary">
-                                {copiedLink ? <><Check size={16} /> Copié !</> : <><Copy size={16} /> Copier le lien</>}
-                            </button>
+                                <a
+                                    href={generateShareCartLink()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn-whatsapp"
+                                >
+                                    <MessageCircle size={18} />
+                                    Partager sur WhatsApp
+                                </a>
 
-                            <button onClick={() => setShowShareModal(false)} className="btn-text">
-                                Fermer
-                            </button>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+                                <button onClick={() => copyToClipboard(window.location.href)} className="btn-secondary">
+                                    {copiedLink ? <><Check size={16} /> Copié !</> : <><Copy size={16} /> Copier le lien</>}
+                                </button>
+
+                                <button onClick={() => setShowShareModal(false)} className="btn-text">
+                                    Fermer
+                                </button>
+                            </motion.div>
+                        </>
+                    )
+                }
+            </AnimatePresence >
 
             {/* ===================== FOOTER ===================== */}
-            <footer className="shop-footer">
+            < footer className="shop-footer" >
                 <p>Propulsé par <span className="velmo-brand">Velmo</span></p>
-            </footer>
-        </div>
+            </footer >
+        </div >
     );
 }

@@ -212,21 +212,21 @@ body::after {
 }
 
 .card-img-container {
-  aspect-ratio: 1;
-  background: rgba(0, 0, 0, 0.05);
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background: #f0f0f0;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
-  margin: 14px;
   border-radius: var(--radius-lg);
   box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme='dark'] .card-img-container {
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .card-img-container img {
@@ -234,6 +234,10 @@ body::after {
   height: 100%;
   object-fit: cover;
   transition: transform 0.8s cubic-bezier(0.2, 0, 0, 1);
+  opacity: 1;
+  display: block;
+  position: relative;
+  z-index: 2;
 }
 
 .product-card:hover .card-img-container img {
@@ -781,9 +785,9 @@ body::after {
 .product-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   pointer-events: auto;
 }
 
@@ -1231,11 +1235,16 @@ body::after {
 
 /* Image: Cosmic Halo */
 .card-img-container {
+  aspect-ratio: 1 / 1;
+  width: calc(100% - 16px);
+  margin: 8px;
   border-radius: 20px;
   overflow: hidden;
-  margin: 8px;
   position: relative;
   background: radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-img-container img {
@@ -2233,8 +2242,8 @@ body::after {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
   z-index: 400;
 }
 
@@ -2541,7 +2550,7 @@ body::after {
   aspect-ratio: 1;
   border-radius: 20px;
   overflow: hidden;
-  background: var(--cart-item-bg);
+  background: #000000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2551,7 +2560,8 @@ body::after {
 .modal-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  opacity: 1;
 }
 
 .modal-info h2 {
@@ -3301,4 +3311,282 @@ img.loaded {
   .cart-floating {
     min-width: 90% !important;
   }
+}
+
+/* ========================================== */
+/* ??? FILTER PANEL REDESIGN (UX/UI) */
+/* ========================================== */
+
+.search-filter-row {
+  display: flex !important;
+  gap: 12px !important;
+  margin-top: 24px !important;
+  align-items: center !important;
+}
+
+.filter-toggle {
+  background: var(--glass-surface) !important;
+  border: 1px solid var(--glass-border) !important;
+  width: auto !important;
+  height: 52px !important;
+  /* Larger touch target */
+  padding: 0 20px !important;
+  border-radius: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  color: var(--text-main) !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.filter-toggle:hover,
+.filter-toggle.active {
+  background: var(--primary) !important;
+  color: white !important;
+  border-color: var(--primary) !important;
+}
+
+/* Panel Container */
+.filters-panel {
+  margin-top: 16px !important;
+  background: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+  border-radius: 20px !important;
+  padding: 20px !important;
+  overflow: hidden !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1) !important;
+}
+
+.filter-group {
+  margin-bottom: 20px !important;
+}
+
+.filter-group:last-child {
+  margin-bottom: 0 !important;
+}
+
+.filter-label {
+  display: block !important;
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  color: var(--text-muted) !important;
+  margin-bottom: 12px !important;
+}
+
+/* Chip Buttons */
+.filter-options {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+}
+
+.filter-chip {
+  padding: 10px 18px !important;
+  background: var(--bg-deep) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 99px !important;
+  /* Pill shape */
+  color: var(--text-muted) !important;
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* Active State */
+.filter-chip.active {
+  background: var(--primary) !important;
+  color: white !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 4px 15px var(--primary-glow) !important;
+  transform: translateY(-2px) !important;
+}
+
+.filter-chip:hover:not(.active) {
+  background: rgba(255, 136, 0, 0.1) !important;
+  color: var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+
+/* Mobile Tweaks */
+@media (max-width: 640px) {
+  .search-filter-row {
+    flex-direction: row !important;
+    /* Keep search and filter side-by-side */
+  }
+
+  .search-container {
+    flex: 1 !important;
+    /* Search takes available space */
+  }
+
+  .filter-toggle {
+    width: 52px !important;
+    /* Icon only on very small screens if needed, otherwise keeps padding */
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+
+  /* Hide text on mobile button to save space if needed, or keep it */
+  .filter-toggle span {
+    display: none !important;
+  }
+
+  .filter-options {
+    gap: 8px !important;
+  }
+
+  .filter-chip {
+    padding: 8px 14px !important;
+    font-size: 0.85rem !important;
+    flex-grow: 1 !important;
+    /* Make chips fill width for easier tapping */
+    justify-content: center !important;
+  }
+}
+
+/* ========================================== */
+/* ?? LIGHT MODE VISIBILITY FIXES */
+/* ========================================== */
+
+[data-theme='light'] {
+
+  /* 1. Search Bar Fix */
+  .search-container {
+    background: #F1F5F9 !important;
+    /* Light grey bg */
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: none !important;
+  }
+
+  .search-input {
+    color: #0F172A !important;
+    /* Dark text */
+    background: transparent !important;
+  }
+
+  .search-input::placeholder {
+    color: #64748B !important;
+    /* Visible placeholder */
+  }
+
+  .search-icon {
+    color: #64748B !important;
+  }
+
+  /* 2. Product Cards Fix */
+  .product-card {
+    background: #FFFFFF !important;
+    /* Solid white */
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  }
+
+  .product-card:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+    border-color: var(--primary) !important;
+  }
+
+  .product-title {
+    color: #0F172A !important;
+    /* Dark Title */
+    font-weight: 700 !important;
+  }
+
+  .card-content {
+    background: transparent !important;
+  }
+
+  /* 3. Filter Buttons in Light Mode */
+  .filter-toggle {
+    background: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    color: #0F172A !important;
+  }
+
+  .filters-panel {
+    background: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+  }
+
+  .filter-chip {
+    background: #F8FAFC !important;
+    border-color: #E2E8F0 !important;
+    color: #64748B !important;
+  }
+
+  .filter-chip:hover {
+    background: #F1F5F9 !important;
+  }
+
+  /* 4. Text Contrast */
+  .shop-description {
+    color: #475569 !important;
+  }
+
+  .empty-products {
+    color: #64748B !important;
+  }
+}
+
+/* ========================================== */
+/* ?? IN-CARD QUANTITY CONTROLLER */
+/* ========================================== */
+
+.btn-add-cart.qty-mode {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  background: var(--cart-bg) !important;
+  border: 1px solid var(--primary) !important;
+  padding: 4px !important;
+  box-shadow: 0 0 15px rgba(255, 136, 0, 0.2) !important;
+}
+
+.qty-btn-mini {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  background: var(--bg-deep) !important;
+  color: var(--text-main) !important;
+  border: 1px solid var(--glass-border) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+}
+
+.qty-btn-mini:active {
+  transform: scale(0.9);
+  background: var(--primary) !important;
+  color: white !important;
+}
+
+.qty-display {
+  font-weight: 800 !important;
+  font-size: 1.1rem !important;
+  color: var(--primary) !important;
+  min-width: 24px !important;
+  text-align: center !important;
+}
+
+/* Highlight Selected Product Card */
+.product-card:has(.qty-mode) {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 20px rgba(255, 136, 0, 0.15) !important;
+  transform: translateY(-5px);
+}
+
+[data-theme='light'] .product-card:has(.qty-mode) {
+  background: #FFF7ED !important;
+  /* Very light orange tint */
+  box-shadow: 0 10px 20px rgba(255, 136, 0, 0.1) !important;
 }
