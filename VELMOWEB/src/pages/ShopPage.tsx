@@ -1,13 +1,16 @@
-import { useState, useEffect, type FormEvent, useMemo } from 'react';
+import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import type { Shop, Product } from '../lib/supabase';
+import { supabase, type Shop, type Product, type OrderItem } from '../lib/supabase';
 import {
     ShoppingBag, Plus, Minus, Trash2, X, Check, Loader2, Store, ArrowRight, ShoppingCart,
-    Moon, Sun, MapPin, Truck, Search, Clock, Phone, Heart, Share2, MessageCircle,
-    Shield, CreditCard, Users, Star, Filter, ChevronDown, ExternalLink, Copy, CheckCircle2, BadgeCheck
+    Moon, Sun, MapPin, Truck, Search, Clock, Heart, Share2, MessageCircle,
+    Shield, CreditCard, Users, Filter, ChevronDown, Copy, CheckCircle2, BadgeCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// ============================================================
+// 🛒 TYPES LOCAUX
+// ============================================================
 
 interface CartItem {
     product: Product;
@@ -17,13 +20,17 @@ interface CartItem {
 type SortOption = 'default' | 'price-asc' | 'price-desc' | 'name' | 'popular';
 type FilterOption = 'all' | 'available' | 'new';
 
+// ============================================================
+// 📦 COMPOSANT PRINCIPAL
+// ============================================================
+
 export default function ShopPage() {
     const { slug } = useParams<{ slug: string }>();
     const [shop, setShop] = useState<Shop | null>(null);
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Theme Management
+    // 🌙 Theme Management
     const [theme, setTheme] = useState<'light' | 'dark'>(() => {
         const saved = localStorage.getItem('theme');
         if (saved === 'light' || saved === 'dark') return saved;
@@ -35,42 +42,52 @@ export default function ShopPage() {
         localStorage.setItem('theme', theme);
     }, [theme]);
 
-    // Cart & Order State
+    // 🛒 Cart State
     const [cart, setCart] = useState<CartItem[]>(() => {
         const saved = localStorage.getItem('velmo_cart');
         return saved ? JSON.parse(saved) : [];
     });
     const [isCartOpen, setIsCartOpen] = useState(false);
+    const [addedId, setAddedId] = useState<string | null>(null);
+
+    // 📝 Order State
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [orderSuccess, setOrderSuccess] = useState(false);
     const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(null);
-    const [addedId, setAddedId] = useState<string | null>(null);
 
-    // Form State
-    const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '' });
+    // 📋 Form State
+    const [customerInfo, setCustomerInfo] = useState<{
+        name: string;
+        phone: string;
+        address: string;
+        location?: { lat: number; lng: number };
+    }>({ name: '', phone: '', address: '' });
     const [orderNote, setOrderNote] = useState('');
     const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('pickup');
 
-    // Product Modal State
+    // 🖼️ Product Modal State
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [modalQuantity, setModalQuantity] = useState(1);
 
-    // Search & Filter State
+    // 🔍 Search & Filter State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Tout');
     const [sortOption, setSortOption] = useState<SortOption>('default');
     const [filterOption, setFilterOption] = useState<FilterOption>('all');
     const [showFilters, setShowFilters] = useState(false);
 
-    // Favorites
+    // ❤️ Favorites
     const [favorites, setFavorites] = useState<string[]>(() => {
         const saved = localStorage.getItem('velmo_favorites');
         return saved ? JSON.parse(saved) : [];
     });
 
-    // Share Modal
-    const [showShareModal, setShowShareModal] = useState(false);
+    // 📤 Share
     const [copiedLink, setCopiedLink] = useState(false);
+
+    // ============================================================
+    // 🔄 EFFECTS
+    // ============================================================
 
     useEffect(() => {
         localStorage.setItem('velmo_cart', JSON.stringify(cart));
@@ -84,11 +101,9 @@ export default function ShopPage() {
         if (slug) loadShopData();
     }, [slug]);
 
-    // Helpers
-    const formatPrice = (price: number | null | undefined) => {
-        if (!price || isNaN(price) || price === 0) return "Prix sur demande";
-        return `${price.toLocaleString('fr-FR')} GNF`;
-    };
+    // ============================================================
+    // 📊 COMPUTED VALUES
+    // ============================================================
 
     const categories = useMemo(() =>
         ['Tout', ...new Set(products.map(p => p.category).filter(Boolean))],
@@ -101,7 +116,6 @@ export default function ShopPage() {
                 (product.description?.toLowerCase().includes(searchQuery.toLowerCase()));
             const matchesCategory = selectedCategory === 'Tout' || product.category === selectedCategory;
 
-            // Filter options
             let matchesFilter = true;
             if (filterOption === 'available') matchesFilter = product.is_active;
             if (filterOption === 'new') {
@@ -113,7 +127,6 @@ export default function ShopPage() {
             return matchesSearch && matchesCategory && matchesFilter;
         });
 
-        // Sorting
         switch (sortOption) {
             case 'price-asc':
                 result.sort((a, b) => (a.price_sale || 0) - (b.price_sale || 0));
@@ -124,48 +137,88 @@ export default function ShopPage() {
             case 'name':
                 result.sort((a, b) => a.name.localeCompare(b.name));
                 break;
-            case 'popular':
-                result.sort((a, b) => (b.is_popular ? 1 : 0) - (a.is_popular ? 1 : 0));
-                break;
         }
 
         return result;
     }, [products, searchQuery, selectedCategory, sortOption, filterOption]);
+
+    const totalAmount = cart.reduce((acc, item) => acc + ((item.product.price_sale || 0) * item.quantity), 0);
+    const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
+
+    // ============================================================
+    // 🔧 HELPERS
+    // ============================================================
+
+    const formatPrice = (price: number | null | undefined) => {
+        if (!price || isNaN(price) || price === 0) return "Prix sur demande";
+        return `${price.toLocaleString('fr-FR')} GNF`;
+    };
+
+    const getPublicImageUrl = (path: string | null | undefined) => {
+        if (!path) return null;
+        if (path.startsWith('http')) return path;
+
+        const bucket = 'velmo-media';
+        const projectUrl = import.meta.env.VITE_SUPABASE_URL;
+        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+
+        return `${projectUrl}/storage/v1/object/public/${bucket}/${cleanPath}`;
+    };
+
+    const getShopLogo = () => {
+        return shop?.logo_url || shop?.logo || null;
+    };
+
+    const getShopCover = () => {
+        return shop?.cover_url || shop?.cover || null;
+    };
+
+    const getStockStatus = (product: Product) => {
+        if (!product.is_active) return { label: 'Rupture', color: 'red' };
+        if (product.quantity !== null && product.quantity !== undefined) {
+            if (product.quantity === 0) return { label: 'Rupture', color: 'red' };
+            if (product.quantity <= 5) return { label: 'Stock faible', color: 'yellow' };
+        }
+        return { label: 'Disponible', color: 'green' };
+    };
+
+    // ============================================================
+    // 📡 DATA LOADING
+    // ============================================================
 
     const loadShopData = async () => {
         try {
             setLoading(true);
             console.log('🔍 Chargement de la boutique pour le slug:', slug);
 
+            // Charger la boutique (publique uniquement)
             const { data: shopData, error: shopError } = await supabase
                 .from('shops')
                 .select('*')
                 .ilike('slug', slug || '')
+                .eq('is_public', true)
                 .single();
 
             if (shopError || !shopData) {
-                console.error('❌ Boutique introuvable:', shopError);
+                console.error('❌ Boutique introuvable ou non publique:', shopError);
                 throw new Error('Boutique introuvable');
             }
 
             console.log('✅ Boutique trouvée:', shopData);
             setShop(shopData);
 
-            // Charger les produits - On retire le filtre strict is_active pour voir si c'est lui qui bloque
+            // Charger les produits actifs
             const { data: productData, error: productError } = await supabase
                 .from('products')
                 .select('*')
                 .eq('shop_id', shopData.id)
+                .eq('is_active', true)
                 .order('name');
 
             if (productError) throw productError;
 
-            // Debug: Afficher les produits et leurs URLs
-            console.log('📦 Produits chargés:', productData?.length, productData);
-
-            // Filtre côté client pour plus de flexibilité si besoin
-            const activeProducts = productData?.filter(p => p.is_active !== false) || [];
-            setProducts(activeProducts);
+            console.log('📦 Produits chargés:', productData?.length);
+            setProducts(productData || []);
 
         } catch (err) {
             console.error('💥 Erreur chargement:', err);
@@ -174,24 +227,13 @@ export default function ShopPage() {
         }
     };
 
-    // 🖼️ Helper pour construire l'URL de l'image Supabase
-    const getPublicImageUrl = (path: string | null | undefined) => {
-        if (!path) return null;
-        if (path.startsWith('http')) return path;
-
-        const bucket = 'velmo-media';
-        const projectUrl = import.meta.env.VITE_SUPABASE_URL;
-
-        // Nettoyer le path au cas où
-        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-
-        return `${projectUrl}/storage/v1/object/public/${bucket}/${cleanPath}`;
-    };
+    // ============================================================
+    // 🛒 CART ACTIONS
+    // ============================================================
 
     const addToCart = (product: Product, quantity: number = 1) => {
         if (navigator.vibrate) navigator.vibrate(50);
 
-        // Visual feedback
         setAddedId(product.id);
         setTimeout(() => setAddedId(null), 1500);
 
@@ -210,8 +252,6 @@ export default function ShopPage() {
         setCart(prev => prev.map(item => {
             if (item.product.id === productId) {
                 const newQuantity = Math.max(0, item.quantity + delta);
-                setAddedId(productId);
-                setTimeout(() => setAddedId(null), 1000);
                 return { ...item, quantity: newQuantity };
             }
             return item;
@@ -228,6 +268,10 @@ export default function ShopPage() {
         }).filter(item => item.quantity > 0));
     };
 
+    const removeFromCart = (productId: string) => {
+        setCart(prev => prev.filter(item => item.product.id !== productId));
+    };
+
     const toggleFavorite = (productId: string) => {
         if (navigator.vibrate) navigator.vibrate(30);
         setFavorites(prev =>
@@ -237,10 +281,10 @@ export default function ShopPage() {
         );
     };
 
-    const totalAmount = cart.reduce((acc, item) => acc + ((item.product.price_sale || 0) * item.quantity), 0);
-    const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
+    // ============================================================
+    // 📲 WHATSAPP LINK
+    // ============================================================
 
-    // 📲 WhatsApp Deep Link Generator (OPTION B - Zero Backend)
     const generateWhatsAppLink = (orderId?: string) => {
         if (!shop) return '';
 
@@ -251,6 +295,11 @@ export default function ShopPage() {
             `• ${item.product.name} x${item.quantity} = ${formatPrice(item.product.price_sale * item.quantity)}`
         ).join('\n');
 
+        let locationLink = '';
+        if (customerInfo.location) {
+            locationLink = `\n📍 *Position GPS:* https://www.google.com/maps?q=${customerInfo.location.lat},${customerInfo.location.lng}`;
+        }
+
         const message = `📦 *NOUVELLE COMMANDE VELMO*
 
 🏪 *Boutique:* ${shop.name}
@@ -258,6 +307,7 @@ ${orderId ? `🆔 *Réf:* #${orderId.slice(0, 8).toUpperCase()}` : ''}
 
 👤 *Client:* ${customerInfo.name}
 📱 *Téléphone:* ${customerInfo.phone}
+${customerInfo.address ? `🏠 *Adresse:* ${customerInfo.address}` : ''}${locationLink}
 
 🛒 *Produits:*
 ${itemsList}
@@ -273,35 +323,25 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
         return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
     };
 
-    // 📤 Share Cart Link
-    const generateShareCartLink = () => {
-        if (cart.length === 0) return '';
-
-        const itemsList = cart.map(item =>
-            `• ${item.product.name} x${item.quantity}`
-        ).join('\n');
-
-        const message = `🛒 *Mon panier chez ${shop?.name}*
-
-${itemsList}
-
-💰 Total: ${formatPrice(totalAmount)}
-
-👉 Voir la boutique: ${window.location.href}`;
-
-        return `https://wa.me/?text=${encodeURIComponent(message)}`;
-    };
-
-    // 📤 Share Product Link
-    const generateShareProductLink = (product: Product) => {
-        const message = `🔥 Regarde ce produit chez ${shop?.name}!
-
-📦 *${product.name}*
-💰 ${formatPrice(product.price_sale)}
-
-👉 ${window.location.href}`;
-
-        return `https://wa.me/?text=${encodeURIComponent(message)}`;
+    const requestLocation = () => {
+        if (!navigator.geolocation) {
+            alert("La géolocalisation n'est pas supportée par votre navigateur.");
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setCustomerInfo(prev => ({
+                    ...prev,
+                    location: {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    }
+                }));
+            },
+            () => {
+                alert("Impossible de récupérer votre position. Veuillez vérifier vos paramètres.");
+            }
+        );
     };
 
     const copyToClipboard = async (text: string) => {
@@ -310,6 +350,10 @@ ${itemsList}
         setTimeout(() => setCopiedLink(false), 2000);
     };
 
+    // ============================================================
+    // 📝 ORDER SUBMISSION (CONFORME AU RAPPORT - items_json)
+    // ============================================================
+
     const handleSubmitOrder = async (e: FormEvent) => {
         e.preventDefault();
         if (!shop || cart.length === 0) return;
@@ -317,22 +361,27 @@ ${itemsList}
         try {
             setIsSubmitting(true);
 
+            // Structure items_json conforme au rapport
+            const items_json: OrderItem[] = cart.map(item => ({
+                id: item.product.id,
+                name: item.product.name,
+                price: item.product.price_sale || 0,
+                quantity: item.quantity
+            }));
+
             const orderData = {
                 shop_id: shop.id,
-                items: cart.map(item => ({
-                    id: item.product.id,
-                    name: item.product.name,
-                    price: item.product.price_sale || 0,
-                    quantity: item.quantity
-                })),
-                total_amount: totalAmount,
                 customer_name: customerInfo.name,
                 customer_phone: customerInfo.phone,
-                customer_address: deliveryMethod === 'delivery' ? orderNote : null, // Si livraison, la note sert d'adresse
-                order_note: orderNote,
+                customer_address: deliveryMethod === 'delivery' ? customerInfo.address : null,
+                items_json: items_json,
+                total_amount: totalAmount,
                 delivery_method: deliveryMethod,
+                order_note: orderNote || null,
                 status: 'pending'
             };
+
+            console.log('📤 Envoi de la commande:', orderData);
 
             const { data, error } = await supabase
                 .from('customer_orders')
@@ -340,12 +389,17 @@ ${itemsList}
                 .select('id')
                 .single();
 
-            if (error) throw error;
+            if (error) {
+                console.error('❌ Erreur Supabase:', error);
+                throw error;
+            }
 
+            console.log('✅ Commande créée:', data);
             setSubmittedOrderId(data?.id || null);
             setOrderSuccess(true);
             setCart([]);
             localStorage.removeItem('velmo_cart');
+
         } catch (err) {
             alert("Une erreur est survenue. Veuillez réessayer.");
             console.error(err);
@@ -354,17 +408,10 @@ ${itemsList}
         }
     };
 
-    // Get stock status
-    const getStockStatus = (product: Product) => {
-        if (!product.is_active) return { label: 'Rupture', color: 'red' };
-        if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
-            if (product.stock_quantity === 0) return { label: 'Rupture', color: 'red' };
-            if (product.stock_quantity <= 5) return { label: 'Stock faible', color: 'yellow' };
-        }
-        return { label: 'Disponible', color: 'green' };
-    };
+    // ============================================================
+    // 🎨 RENDER: LOADING
+    // ============================================================
 
-    // ===================== LOADING STATE =====================
     if (loading) {
         return (
             <div className="shop-loading-screen">
@@ -407,19 +454,25 @@ ${itemsList}
         );
     }
 
-    // ===================== SHOP NOT FOUND =====================
+    // ============================================================
+    // 🎨 RENDER: ERROR (BOUTIQUE NON TROUVÉE)
+    // ============================================================
+
     if (!shop) {
         return (
             <div className="error-screen">
                 <Store className="error-icon" size={64} />
                 <h1>Boutique introuvable</h1>
-                <p>Cette boutique n'existe pas ou est fermée.</p>
+                <p>Cette boutique n'existe pas ou n'est pas publique.</p>
                 <a href="/" className="btn-back-home">Retour à l'accueil</a>
             </div>
         );
     }
 
-    // ===================== MAIN RENDER =====================
+    // ============================================================
+    // 🎨 RENDER: MAIN
+    // ============================================================
+
     return (
         <div className="shop-container">
             {/* ✨ Particles Background */}
@@ -439,7 +492,7 @@ ${itemsList}
                 ))}
             </div>
 
-            {/* Theme Toggle */}
+            {/* 🌙 Theme Toggle */}
             <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                 className="theme-switch"
@@ -450,23 +503,29 @@ ${itemsList}
 
             {/* ===================== SHOP HEADER ===================== */}
             <header className="shop-header">
-                {/* 🖼️ COVER IMAGE (NEW!) */}
-                {shop.cover_url && (
-                    <div className="shop-cover">
-                        <img src={getPublicImageUrl(shop.cover_url) || ''} alt={`Couverture ${shop.name}`} />
-                        <div className="shop-cover-overlay"></div>
-                    </div>
-                )}
+                {/* 📸 COVER IMAGE */}
+                <div className="shop-cover">
+                    {getShopCover() ? (
+                        <img src={getPublicImageUrl(getShopCover()) || ''} alt={`Couverture ${shop.name}`} />
+                    ) : (
+                        <div className="shop-cover-fallback"></div>
+                    )}
+                    <div className="shop-cover-overlay"></div>
+                </div>
 
                 <div className="shop-header-content">
-                    {/* Logo Boutique */}
-                    {shop.logo_url && (
-                        <div className="shop-logo-container">
-                            <img src={getPublicImageUrl(shop.logo_url) || ''} alt={shop.name} className="shop-logo" />
-                        </div>
-                    )}
+                    {/* 🖼️ Logo */}
+                    <div className="shop-logo-container">
+                        {getShopLogo() ? (
+                            <img src={getPublicImageUrl(getShopLogo()) || ''} alt={shop.name} className="shop-logo" />
+                        ) : (
+                            <div className="shop-logo-fallback">
+                                {shop.name.substring(0, 2).toUpperCase()}
+                            </div>
+                        )}
+                    </div>
 
-                    {/* Badges */}
+                    {/* 🏅 Badges */}
                     <div className="shop-badge-container">
                         {shop.is_verified && (
                             <span className="shop-badge verified">
@@ -482,6 +541,7 @@ ${itemsList}
                         )}
                     </div>
 
+                    {/* 📛 Titre */}
                     <h1 className="shop-title">{shop.name}</h1>
 
                     {/* 📍 Info Bar */}
@@ -511,6 +571,7 @@ ${itemsList}
                         )}
                     </div>
 
+                    {/* 📝 Description */}
                     {shop.description && (
                         <p className="shop-description">{shop.description}</p>
                     )}
@@ -554,7 +615,6 @@ ${itemsList}
                                         { value: 'price-asc', label: 'Prix ↑' },
                                         { value: 'price-desc', label: 'Prix ↓' },
                                         { value: 'name', label: 'A-Z' },
-                                        { value: 'popular', label: '🔥' },
                                     ].map(opt => (
                                         <button
                                             key={opt.value}
@@ -625,21 +685,18 @@ ${itemsList}
                                 }}
                             >
                                 <div className="card-img-container">
-                                    {(product.photo_url || (product as any).image_url) ? (
+                                    {product.photo_url ? (
                                         <img
-                                            src={getPublicImageUrl(product.photo_url || (product as any).image_url) || ''}
+                                            src={getPublicImageUrl(product.photo_url) || ''}
                                             alt={product.name}
-                                            onLoad={() => {
-                                                // Optional: Log success
-                                            }}
                                             onError={(e) => {
-                                                console.error(`❌ Erreur chargement image: ${product.name}`);
                                                 (e.target as HTMLImageElement).style.display = 'none';
                                             }}
                                         />
                                     ) : (
                                         <Store size={40} className="placeholder-icon" />
                                     )}
+
                                     {/* Favorite */}
                                     <button
                                         className={`favorite-btn ${isFavorite ? 'active' : ''}`}
@@ -655,13 +712,6 @@ ${itemsList}
                                     <div className={`stock-badge stock-${stockStatus.color}`}>
                                         {stockStatus.label}
                                     </div>
-
-                                    {/* Popular */}
-                                    {product.is_popular && (
-                                        <div className="popular-badge">
-                                            <Star size={10} fill="currentColor" /> Top
-                                        </div>
-                                    )}
                                 </div>
 
                                 <div className="card-content">
@@ -727,7 +777,7 @@ ${itemsList}
             </main>
 
             {/* ===================== TRUST SECTION ===================== */}
-            < section className="trust-section" >
+            <section className="trust-section">
                 <h3>Pourquoi commander chez nous ?</h3>
                 <div className="trust-grid">
                     <div className="trust-card">
@@ -746,365 +796,363 @@ ${itemsList}
                         <p>Assistance 7j/7</p>
                     </div>
                 </div>
-            </section >
+            </section>
 
-            {/* ===================== PRODUCT MODAL ===================== */}
-            <AnimatePresence>
-                {
-                    selectedProduct && (
-                        <>
-                            <motion.div
-                                className="product-modal-overlay"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                onClick={() => setSelectedProduct(null)}
-                            />
-                            <div className="product-modal-container">
-                                <motion.div
-                                    className="product-modal-content"
-                                    initial={{ y: '100%' }}
-                                    animate={{ y: 0 }}
-                                    exit={{ y: '100%' }}
-                                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                                >
-                                    <button className="btn-close-modal" onClick={() => setSelectedProduct(null)}>
-                                        <X size={24} />
-                                    </button>
-                                    <button
-                                        className="btn-share-modal"
-                                        onClick={() => window.open(generateShareProductLink(selectedProduct), '_blank')}
-                                    >
-                                        <Share2 size={18} />
-                                    </button>
+            {/* ===================== FOOTER ===================== */}
+            <footer className="shop-footer">
+                <div className="footer-logo">
+                    <svg viewBox="0 0 100 100" fill="none">
+                        <rect width="100" height="100" rx="28" fill="#ff5500" />
+                        <path d="M32 38L50 72L68 38" stroke="white" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </div>
+                <p className="footer-text">
+                    Propulsé par <a href="https://velmo.market" target="_blank" rel="noopener noreferrer">Velmo</a>
+                </p>
+            </footer>
 
-                                    <div className="product-modal-img">
-                                        {(selectedProduct.photo_url || (selectedProduct as any).image_url) ? (
-                                            <img
-                                                src={getPublicImageUrl(selectedProduct.photo_url || (selectedProduct as any).image_url) || ''}
-                                                alt={selectedProduct.name}
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                }}
-                                            />
-                                        ) : (
-                                            <Store size={64} className="text-slate-300" />
-                                        )}
-                                    </div>
-
-                                    <div className="product-modal-info">
-                                        <div className="modal-badges">
-                                            {selectedProduct.category && (
-                                                <span className="modal-category">{selectedProduct.category}</span>
-                                            )}
-                                            <span className={`stock-badge stock-${getStockStatus(selectedProduct).color}`}>
-                                                {getStockStatus(selectedProduct).label}
-                                            </span>
-                                        </div>
-
-                                        <h2>{selectedProduct.name}</h2>
-                                        <div className="product-modal-price">{formatPrice(selectedProduct.price_sale)}</div>
-
-                                        {selectedProduct.description && (
-                                            <p className="product-modal-desc">{selectedProduct.description}</p>
-                                        )}
-
-                                        <div className="modal-qty-section">
-                                            <span>Quantité</span>
-                                            <div className="qty-controls">
-                                                <button onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))} className="btn-qty">
-                                                    <Minus size={18} />
-                                                </button>
-                                                <span className="qty-value">{modalQuantity}</span>
-                                                <button onClick={() => setModalQuantity(modalQuantity + 1)} className="btn-qty">
-                                                    <Plus size={18} />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            className={`btn-add-cart-big ${addedId === selectedProduct.id ? 'added' : ''}`}
-                                            onClick={() => {
-                                                addToCart(selectedProduct, modalQuantity);
-                                                setTimeout(() => setSelectedProduct(null), 600);
-                                            }}
-                                            disabled={!selectedProduct.is_active}
-                                        >
-                                            {addedId === selectedProduct.id ? (
-                                                <><Check size={20} /> Ajouté !</>
-                                            ) : (
-                                                <><ShoppingCart size={20} /> Ajouter • {formatPrice(selectedProduct.price_sale * modalQuantity)}</>
-                                            )}
-                                        </button>
-                                    </div>
-                                </motion.div>
-                            </div>
-                        </>
-                    )
-                }
-            </AnimatePresence >
-
-            {/* ===================== FLOATING CART ===================== */}
-            <AnimatePresence>
-                {
-                    totalItems > 0 && (
-                        <motion.div
-                            className="cart-floating"
-                            initial={{ scale: 0, y: 50 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0, y: 50 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setIsCartOpen(true)}
-                        >
-                            <div className="cart-count">{totalItems}</div>
-                            <span>Panier • {totalAmount.toLocaleString()} GNF</span>
-                            <ShoppingBag size={20} />
-                        </motion.div>
-                    )
-                }
-            </AnimatePresence >
+            {/* ===================== FLOATING CART BUTTON ===================== */}
+            {cart.length > 0 && (
+                <motion.button
+                    className="cart-floating"
+                    onClick={() => setIsCartOpen(true)}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    whileTap={{ scale: 0.95 }}
+                >
+                    <ShoppingCart size={22} />
+                    <span className="cart-badge">{totalItems}</span>
+                    <span>{formatPrice(totalAmount)}</span>
+                </motion.button>
+            )}
 
             {/* ===================== CART SHEET ===================== */}
             <AnimatePresence>
-                {
-                    isCartOpen && (
-                        <>
+                {isCartOpen && (
+                    <>
+                        <motion.div
+                            className="cart-overlay"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsCartOpen(false)}
+                        />
+                        <motion.div
+                            className="cart-sheet"
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                        >
+                            <div className="cart-header">
+                                <h2>
+                                    <ShoppingCart size={24} />
+                                    {orderSuccess ? 'Commande confirmée' : `Panier (${totalItems})`}
+                                </h2>
+                                <button className="btn-close-cart" onClick={() => setIsCartOpen(false)}>
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            {orderSuccess ? (
+                                <div className="order-success" style={{ padding: '2rem 1rem', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                                    <div className="success-icon">
+                                        <CheckCircle2 size={40} />
+                                    </div>
+                                    <h2>Commande envoyée ! 🎉</h2>
+                                    <p>Merci pour votre commande.</p>
+
+                                    {submittedOrderId && (
+                                        <div className="order-id">
+                                            <span>Réf: #{submittedOrderId.slice(0, 8).toUpperCase()}</span>
+                                            <button onClick={() => copyToClipboard(submittedOrderId)}>
+                                                {copiedLink ? <Check size={16} /> : <Copy size={16} />}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <a
+                                        href={generateWhatsAppLink(submittedOrderId || undefined)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="whatsapp-btn"
+                                        style={{ marginTop: 'auto', marginBottom: '1rem' }}
+                                    >
+                                        <MessageCircle size={20} />
+                                        Envoyer sur WhatsApp
+                                    </a>
+
+                                    <button
+                                        className="btn-close-modal"
+                                        style={{ width: '100%', borderRadius: 'var(--radius-lg)' }}
+                                        onClick={() => {
+                                            setIsCartOpen(false);
+                                            setOrderSuccess(false);
+                                            setCustomerInfo({ name: '', phone: '', address: '' });
+                                            setOrderNote('');
+                                        }}
+                                    >
+                                        Fermer et continuer
+                                    </button>
+                                </div>
+                            ) : cart.length === 0 ? (
+                                <div className="cart-empty">
+                                    <ShoppingBag size={64} />
+                                    <p>Votre panier est vide</p>
+                                </div>
+                            ) : (
+                                <form id="checkout-form" onSubmit={handleSubmitOrder} style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                                    <div className="cart-items">
+                                        {/* ITEMS LIST */}
+                                        {cart.map(item => (
+                                            <div key={item.product.id} className="cart-item">
+                                                <div className="cart-item-img">
+                                                    {item.product.photo_url ? (
+                                                        <img src={getPublicImageUrl(item.product.photo_url) || ''} alt={item.product.name} />
+                                                    ) : (
+                                                        <Store size={24} />
+                                                    )}
+                                                </div>
+                                                <div className="cart-item-info">
+                                                    <div className="cart-item-name">{item.product.name}</div>
+                                                    <div className="cart-item-price">{formatPrice(item.product.price_sale)}</div>
+                                                    <div className="cart-item-actions">
+                                                        <button type="button" className="qty-btn" onClick={() => updateQuantity(item.product.id, -1)}>
+                                                            <Minus size={14} />
+                                                        </button>
+                                                        <input
+                                                            type="number"
+                                                            className="qty-input"
+                                                            value={item.quantity}
+                                                            onChange={(e) => setManualQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                                                            min="0"
+                                                        />
+                                                        <button type="button" className="qty-btn" onClick={() => updateQuantity(item.product.id, 1)}>
+                                                            <Plus size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="cart-item-remove">
+                                                    <button type="button" className="btn-remove" onClick={() => removeFromCart(item.product.id)}>
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {/* CHECKOUT FORM FIELDS */}
+                                        <div style={{ padding: '1.5rem 0 0.5rem', borderTop: '1px solid var(--border-color)', marginTop: '1rem' }}>
+                                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <Users size={18} /> Vos coordonnées
+                                            </h3>
+
+                                            <div className="form-group">
+                                                <label className="form-label required">Nom complet</label>
+                                                <input
+                                                    type="text"
+                                                    className="form-input"
+                                                    placeholder="Ex: Mamadou Diallo"
+                                                    value={customerInfo.name}
+                                                    onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })}
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div className="form-group">
+                                                <label className="form-label required">Téléphone</label>
+                                                <input
+                                                    type="tel"
+                                                    className="form-input"
+                                                    placeholder="Ex: 622001234"
+                                                    value={customerInfo.phone}
+                                                    onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div className="form-group">
+                                                <label className="form-label">Mode de retrait</label>
+                                                <div className="delivery-toggle">
+                                                    <button
+                                                        type="button"
+                                                        className={`delivery-option ${deliveryMethod === 'pickup' ? 'active' : ''}`}
+                                                        onClick={() => setDeliveryMethod('pickup')}
+                                                    >
+                                                        <Store size={24} />
+                                                        <span>Retrait</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`delivery-option ${deliveryMethod === 'delivery' ? 'active' : ''}`}
+                                                        onClick={() => setDeliveryMethod('delivery')}
+                                                    >
+                                                        <Truck size={24} />
+                                                        <span>Livraison</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {deliveryMethod === 'delivery' && (
+                                                <div className="form-group">
+                                                    <label className="form-label required">Adresse / Lieu</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Ex: Kaloum, près de la banque..."
+                                                        value={customerInfo.address}
+                                                        onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
+                                                        required={deliveryMethod === 'delivery'}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className={`delivery-option ${customerInfo.location ? 'active' : ''}`}
+                                                        onClick={requestLocation}
+                                                        style={{ marginTop: '10px', width: '100%', flexDirection: 'row', gap: '10px', padding: '10px' }}
+                                                    >
+                                                        <MapPin size={20} />
+                                                        <span>{customerInfo.location ? 'Position GPS incluse ✅' : 'Ajouter ma position GPS'}</span>
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <div className="form-group">
+                                                <label className="form-label">Note (optionnel)</label>
+                                                <textarea
+                                                    className="form-input"
+                                                    placeholder="Instructions spéciales..."
+                                                    value={orderNote}
+                                                    onChange={(e) => setOrderNote(e.target.value)}
+                                                    rows={2}
+                                                    style={{ minHeight: '60px' }}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="cart-footer">
+                                        <div className="cart-total">
+                                            <span className="cart-total-label">Total à payer</span>
+                                            <span className="cart-total-amount">{formatPrice(totalAmount)}</span>
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            form="checkout-form"
+                                            className="btn-checkout"
+                                            disabled={isSubmitting || !customerInfo.name || !customerInfo.phone}
+                                        >
+                                            {isSubmitting ? (
+                                                <><Loader2 size={20} className="animate-spin" /> Envoi en cours...</>
+                                            ) : (
+                                                <><Check size={20} /> Confirmer la commande</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+
+
+            {/* ===================== PRODUCT MODAL ===================== */}
+            <AnimatePresence>
+                {selectedProduct && (
+                    <>
+                        <motion.div
+                            className="product-modal-overlay"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setSelectedProduct(null)}
+                        />
+                        <div className="product-modal-container">
                             <motion.div
-                                className="cart-overlay"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                onClick={() => setIsCartOpen(false)}
-                            />
-                            <motion.div
-                                className="cart-sheet"
+                                className="product-modal-content"
                                 initial={{ y: '100%' }}
                                 animate={{ y: 0 }}
                                 exit={{ y: '100%' }}
-                                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                             >
-                                <div className="cart-header">
-                                    <div className="cart-header-left">
-                                        <ShoppingCart size={22} />
-                                        <h2>Votre Panier</h2>
-                                    </div>
-                                    <div className="cart-header-right">
-                                        {cart.length > 0 && (
-                                            <button onClick={() => setShowShareModal(true)} className="btn-share-sm">
-                                                <Share2 size={16} />
-                                            </button>
-                                        )}
-                                        <button onClick={() => setIsCartOpen(false)} className="btn-close-cart">
-                                            <X size={22} />
-                                        </button>
-                                    </div>
+                                <button className="btn-close-modal" onClick={() => setSelectedProduct(null)}>
+                                    <X size={24} />
+                                </button>
+                                <button
+                                    className="btn-share-modal"
+                                    onClick={() => {
+                                        const url = window.location.href;
+                                        const text = `Découvre ${selectedProduct.name} chez ${shop.name} - ${formatPrice(selectedProduct.price_sale)}`;
+                                        window.open(`https://wa.me/?text=${encodeURIComponent(text + '\n' + url)}`, '_blank');
+                                    }}
+                                >
+                                    <Share2 size={18} />
+                                </button>
+
+                                <div className="product-modal-img">
+                                    {selectedProduct.photo_url ? (
+                                        <img
+                                            src={getPublicImageUrl(selectedProduct.photo_url) || ''}
+                                            alt={selectedProduct.name}
+                                        />
+                                    ) : (
+                                        <Store size={64} />
+                                    )}
                                 </div>
 
-                                <div className="cart-body">
-                                    {orderSuccess ? (
-                                        <div className="success-screen">
-                                            <div className="success-icon"><CheckCircle2 size={48} /></div>
-                                            <h2>Commande Reçue !</h2>
-                                            {submittedOrderId && (
-                                                <p className="order-ref">#{submittedOrderId.slice(0, 8).toUpperCase()}</p>
-                                            )}
-                                            <p>Le vendeur va vous contacter sur WhatsApp.</p>
+                                <div className="product-modal-info">
+                                    <div className="modal-badges">
+                                        {selectedProduct.category && (
+                                            <span className="modal-category">{selectedProduct.category}</span>
+                                        )}
+                                        <span className={`stock-badge stock-${getStockStatus(selectedProduct).color}`}>
+                                            {getStockStatus(selectedProduct).label}
+                                        </span>
+                                    </div>
 
-                                            <a
-                                                href={generateWhatsAppLink(submittedOrderId || undefined)}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="btn-whatsapp"
-                                            >
-                                                <MessageCircle size={20} />
-                                                Envoyer sur WhatsApp
-                                                <ExternalLink size={16} />
-                                            </a>
+                                    <h2 className="product-modal-name">{selectedProduct.name}</h2>
+                                    <p className="product-modal-price">{formatPrice(selectedProduct.price_sale)}</p>
+
+                                    {selectedProduct.description && (
+                                        <p className="product-modal-description">{selectedProduct.description}</p>
+                                    )}
+
+                                    {selectedProduct.is_active && (
+                                        <>
+                                            <div className="product-modal-qty">
+                                                <button
+                                                    className="modal-qty-btn"
+                                                    onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))}
+                                                >
+                                                    <Minus size={20} />
+                                                </button>
+                                                <span className="modal-qty-display">{modalQuantity}</span>
+                                                <button
+                                                    className="modal-qty-btn"
+                                                    onClick={() => setModalQuantity(modalQuantity + 1)}
+                                                >
+                                                    <Plus size={20} />
+                                                </button>
+                                            </div>
 
                                             <button
+                                                className="btn-add-to-cart-modal"
                                                 onClick={() => {
-                                                    setIsCartOpen(false);
-                                                    setOrderSuccess(false);
-                                                    setSubmittedOrderId(null);
+                                                    addToCart(selectedProduct, modalQuantity);
+                                                    setSelectedProduct(null);
                                                 }}
-                                                className="btn-secondary"
                                             >
-                                                Fermer
+                                                <ShoppingCart size={20} />
+                                                Ajouter au panier - {formatPrice(selectedProduct.price_sale * modalQuantity)}
                                             </button>
-                                        </div>
-                                    ) : cart.length === 0 ? (
-                                        <div className="empty-cart">
-                                            <ShoppingBag size={48} />
-                                            <h3>Panier vide</h3>
-                                            <p>Ajoutez des produits pour commencer</p>
-                                            <button onClick={() => setIsCartOpen(false)} className="btn-primary">
-                                                Voir les produits
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="cart-items">
-                                                {cart.map(item => (
-                                                    <div key={item.product.id} className="cart-item">
-                                                        {(item.product.photo_url || (item.product as any).image_url) ? (
-                                                            <img
-                                                                src={getPublicImageUrl(item.product.photo_url || (item.product as any).image_url) || ''}
-                                                                alt={item.product.name}
-                                                                onError={(e) => {
-                                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            <div className="cart-item-placeholder"><Store size={20} /></div>
-                                                        )}
-                                                        <div className="cart-item-info">
-                                                            <h4>{item.product.name}</h4>
-                                                            <p>{(item.product.price_sale || 0).toLocaleString()} GNF</p>
-                                                        </div>
-                                                        <div className="qty-controls">
-                                                            <button onClick={() => updateQuantity(item.product.id, -1)} className="btn-qty">
-                                                                {item.quantity === 1 ? <Trash2 size={14} className="text-red" /> : <Minus size={14} />}
-                                                            </button>
-                                                            <input
-                                                                type="number"
-                                                                value={item.quantity}
-                                                                onChange={(e) => setManualQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                                                                className="qty-input"
-                                                            />
-                                                            <button onClick={() => updateQuantity(item.product.id, 1)} className="btn-qty">
-                                                                <Plus size={14} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            <div className="cart-form">
-                                                <h3 className="section-title">📍 Mode de réception</h3>
-                                                <div className="delivery-toggle">
-                                                    <button
-                                                        className={`toggle-btn ${deliveryMethod === 'pickup' ? 'active' : ''}`}
-                                                        onClick={() => setDeliveryMethod('pickup')}
-                                                    >
-                                                        <MapPin size={16} /> Retrait
-                                                    </button>
-                                                    <button
-                                                        className={`toggle-btn ${deliveryMethod === 'delivery' ? 'active' : ''}`}
-                                                        onClick={() => setDeliveryMethod('delivery')}
-                                                    >
-                                                        <Truck size={16} /> Livraison
-                                                    </button>
-                                                </div>
-
-                                                <h3 className="section-title">👤 Vos coordonnées</h3>
-                                                <p className="section-hint">Pas de compte nécessaire</p>
-
-                                                <form onSubmit={handleSubmitOrder}>
-                                                    <div className="input-group">
-                                                        <Users size={16} className="input-icon" />
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Votre nom"
-                                                            required
-                                                            value={customerInfo.name}
-                                                            onChange={e => setCustomerInfo({ ...customerInfo, name: e.target.value })}
-                                                        />
-                                                    </div>
-                                                    <div className="input-group">
-                                                        <Phone size={16} className="input-icon" />
-                                                        <input
-                                                            type="tel"
-                                                            placeholder="Numéro WhatsApp"
-                                                            required
-                                                            value={customerInfo.phone}
-                                                            onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                                                        />
-                                                    </div>
-                                                    <textarea
-                                                        placeholder={deliveryMethod === 'delivery' ? "Adresse précise de livraison" : "Message ou instructions (optionnel)"}
-                                                        rows={2}
-                                                        required={deliveryMethod === 'delivery'}
-                                                        value={orderNote}
-                                                        onChange={e => setOrderNote(e.target.value)}
-                                                    />
-
-                                                    <div className="checkout-box">
-                                                        <div className="total-row">
-                                                            <span>Total</span>
-                                                            <span className="total-amount">{totalAmount.toLocaleString()} GNF</span>
-                                                        </div>
-
-                                                        <button type="submit" className="btn-checkout" disabled={isSubmitting}>
-                                                            {isSubmitting ? (
-                                                                <Loader2 className="animate-spin" size={20} />
-                                                            ) : (
-                                                                <>Confirmer <ArrowRight size={18} /></>
-                                                            )}
-                                                        </button>
-
-                                                        <p className="reassurance">
-                                                            <Check size={12} /> Paiement à la livraison
-                                                        </p>
-                                                    </div>
-                                                </form>
-                                            </div>
                                         </>
                                     )}
                                 </div>
                             </motion.div>
-                        </>
-                    )
-                }
-            </AnimatePresence >
-
-            {/* ===================== SHARE MODAL ===================== */}
-            <AnimatePresence>
-                {
-                    showShareModal && (
-                        <>
-                            <motion.div
-                                className="modal-overlay"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                onClick={() => setShowShareModal(false)}
-                            />
-                            <motion.div
-                                className="share-modal"
-                                initial={{ scale: 0.9, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0.9, opacity: 0 }}
-                            >
-                                <h3>Partager mon panier</h3>
-                                <p>Envoyez votre sélection à un ami</p>
-
-                                <a
-                                    href={generateShareCartLink()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="btn-whatsapp"
-                                >
-                                    <MessageCircle size={18} />
-                                    Partager sur WhatsApp
-                                </a>
-
-                                <button onClick={() => copyToClipboard(window.location.href)} className="btn-secondary">
-                                    {copiedLink ? <><Check size={16} /> Copié !</> : <><Copy size={16} /> Copier le lien</>}
-                                </button>
-
-                                <button onClick={() => setShowShareModal(false)} className="btn-text">
-                                    Fermer
-                                </button>
-                            </motion.div>
-                        </>
-                    )
-                }
-            </AnimatePresence >
-
-            {/* ===================== FOOTER ===================== */}
-            < footer className="shop-footer" >
-                <p>Propulsé par <span className="velmo-brand">Velmo</span></p>
-            </footer >
-        </div >
+                        </div>
+                    </>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }

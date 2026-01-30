@@ -9,46 +9,130 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
+// ============================================================
+// 📦 TYPES - Conformes au rapport VELMO
+// ============================================================
+
 export interface Shop {
   id: string;
+  velmo_id?: string;
+  owner_id?: string;
+
+  // 📛 IDENTITÉ
   name: string;
   slug: string;
-  logo_url: string | null;
-  cover_url: string | null;  // 🆕 Cover image from Desktop
-  description: string | null;
-  is_public: boolean;
-  currency: string;
-  // 🆕 Marketplace Fields
+  description?: string | null;
+  category?: string | null;
+
+  // 📸 BRANDING (IMAGES)
+  logo?: string | null;
+  logo_url?: string | null;
+  cover?: string | null;
+  cover_url?: string | null;
+  logo_icon?: string | null;
+  logo_color?: string | null;
+
+  // 📍 CONTACT & LOCALISATION
+  address?: string | null;
   location?: string | null;
   phone?: string | null;
+  email?: string | null;
   whatsapp?: string | null;
+
+  // 🕐 HORAIRES
   opening_hours?: string | null;
+
+  // 🌐 RÉSEAUX SOCIAUX
+  facebook_url?: string | null;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  twitter_url?: string | null;
+  website_url?: string | null;
+
+  // 📦 INFORMATIONS LIVRAISON
+  delivery_info?: string | null;
+  return_policy?: string | null;
+
+  // 🔘 STATUTS
+  is_public: boolean;
   is_verified?: boolean;
+  is_active?: boolean;
+
+  // 📊 STATISTIQUES
   orders_count?: number;
+
+  // 🔄 TIMESTAMPS
+  created_at?: string;
+  updated_at?: string;
+
+  // 💰 DEVISE (legacy)
+  currency?: string;
 }
 
 export interface Product {
   id: string;
+  velmo_id?: string;
   shop_id: string;
+  user_id?: string;
+
+  // 📦 PRODUIT
   name: string;
-  price_sale: number; // Was price
-  photo_url: string | null; // Was image_url
+  description?: string | null;
+  category?: string | null;
+  barcode?: string | null;
+  unit?: string;
+
+  // 💰 PRIX
+  price_sale: number;
+  price_buy?: number;
+
+  // 📊 STOCK
+  quantity?: number;
+  stock_alert?: number;
+
+  // 📸 IMAGE
+  photo_url?: string | null;
+
+  // 🔘 STATUTS
   is_active: boolean;
-  is_visible: boolean;
-  description: string | null;
-  category: string | null;
-  // 🆕 Marketplace Fields
-  stock_quantity?: number | null;
-  is_popular?: boolean;
+  is_incomplete?: boolean;
+
+  // 🔄 TIMESTAMPS
   created_at?: string;
+  updated_at?: string;
+}
+
+// Structure des items dans une commande (items_json)
+export interface OrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
 }
 
 export interface CustomerOrder {
+  id?: string;
   shop_id: string;
-  items: any[];
-  total_amount: number;
+
+  // 👤 INFORMATIONS CLIENT
   customer_name: string;
   customer_phone: string;
-  customer_address?: string;
-  status: 'pending' | 'accepted' | 'rejected';
+  customer_address?: string | null;
+
+  // 💰 COMMANDE
+  total_amount: number;
+  items_json: OrderItem[];
+
+  // 🚚 LIVRAISON
+  delivery_method: 'pickup' | 'delivery';
+  order_note?: string | null;
+
+  // 📊 STATUT
+  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'shipped' | 'delivered' | 'cancelled';
+
+  // 🔄 TIMESTAMPS
+  created_at?: string;
+  updated_at?: string;
+  confirmed_at?: string | null;
+  delivered_at?: string | null;
 }

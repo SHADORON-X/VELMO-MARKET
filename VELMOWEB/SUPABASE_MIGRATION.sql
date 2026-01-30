@@ -1,329 +1,268 @@
 -- ============================================================
--- 🚀 VELMO MARKETPLACE - SUPABASE MIGRATION SCRIPT
+-- 🚀 VELMO MARKETPLACE - SUPABASE MIGRATION SCRIPT v2.0
 -- ============================================================
--- Ce script ajoute toutes les colonnes et tables nécessaires
--- pour synchroniser le site web vitrine avec les apps Mobile/Desktop
+-- Conforme au rapport VELMO du 30 Janvier 2026
 -- 
 -- À exécuter dans: Supabase Dashboard > SQL Editor > New Query
 -- ============================================================
 
 
 -- ============================================================
--- 📦 PARTIE 1: MISE À JOUR TABLE "shops"
+-- 📦 PARTIE 1: TABLE "shops" (PROFIL BOUTIQUE)
 -- ============================================================
--- Ajout des colonnes pour le profil boutique public
 
--- Image de couverture (bannière style Facebook)
+-- Vérifier et ajouter les colonnes manquantes
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS velmo_id TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS slug TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS category TEXT;
+
+-- Images
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS cover TEXT;
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS cover_url TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_icon TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_color TEXT;
 
--- Localisation de la boutique (adresse affichée)
+-- Contact & Localisation
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS location TEXT;
-
--- Numéro de téléphone principal
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS phone TEXT;
-
--- Numéro WhatsApp (peut être différent du téléphone)
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS whatsapp TEXT;
 
--- Horaires d'ouverture (format libre, ex: "Lun-Sam 8h-18h")
+-- Horaires
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS opening_hours TEXT;
 
--- Boutique vérifiée par Velmo (badge de confiance)
-ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
+-- Réseaux sociaux
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS facebook_url TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS instagram_url TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS tiktok_url TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS twitter_url TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS website_url TEXT;
 
--- Compteur de commandes (pour badge "+500 commandes")
+-- Livraison
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS delivery_info TEXT;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS return_policy TEXT;
+
+-- Statuts
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT false;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+-- Statistiques
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS orders_count INTEGER DEFAULT 0;
 
--- Commentez les valeurs par défaut si besoin:
-COMMENT ON COLUMN shops.location IS 'Adresse publique affichée sur la vitrine';
-COMMENT ON COLUMN shops.phone IS 'Numéro de téléphone principal de la boutique';
-COMMENT ON COLUMN shops.whatsapp IS 'Numéro WhatsApp pour contact direct (avec indicatif pays, ex: 224622123456)';
-COMMENT ON COLUMN shops.opening_hours IS 'Horaires affichés (format libre)';
-COMMENT ON COLUMN shops.is_verified IS 'Badge boutique vérifiée Velmo';
-COMMENT ON COLUMN shops.orders_count IS 'Nombre total de commandes reçues (mis à jour automatiquement)';
+-- Timestamps
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Index critiques
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_slug_unique 
+ON shops (slug) WHERE slug IS NOT NULL AND slug != '';
+
+CREATE INDEX IF NOT EXISTS idx_shops_is_public 
+ON shops(is_public) WHERE is_public = true;
 
 
 -- ============================================================
--- 📦 PARTIE 2: MISE À JOUR TABLE "products"
+-- 📦 PARTIE 2: TABLE "products" (CATALOGUE)
 -- ============================================================
--- Ajout des colonnes pour gestion de stock et popularité
 
--- Quantité en stock (null = stock non géré)
-ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_quantity INTEGER;
+-- Vérifier et ajouter les colonnes manquantes
+ALTER TABLE products ADD COLUMN IF NOT EXISTS velmo_id TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'pièce';
 
--- Produit populaire/mis en avant
-ALTER TABLE products ADD COLUMN IF NOT EXISTS is_popular BOOLEAN DEFAULT false;
+-- Prix
+ALTER TABLE products ADD COLUMN IF NOT EXISTS price_sale NUMERIC DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS price_buy NUMERIC DEFAULT 0;
 
--- Date de création (pour filtre "nouveautés")
+-- Stock
+ALTER TABLE products ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_alert INTEGER DEFAULT 5;
+
+-- Image
+ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- Statuts
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_incomplete BOOLEAN DEFAULT false;
+
+-- Timestamps
 ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
-COMMENT ON COLUMN products.stock_quantity IS 'Quantité en stock. NULL = stock illimité/non géré';
-COMMENT ON COLUMN products.is_popular IS 'Produit mis en avant avec badge Populaire';
-COMMENT ON COLUMN products.created_at IS 'Date de création pour filtre nouveautés';
+-- Index
+CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products(shop_id);
+CREATE INDEX IF NOT EXISTS idx_products_is_active ON products(is_active) WHERE is_active = true;
 
 
 -- ============================================================
--- 📦 PARTIE 3: TABLE "customer_orders" (COMMANDES CLIENT)
+-- 📦 PARTIE 3: TABLE "customer_orders" (COMMANDES WEB)
 -- ============================================================
--- Table pour stocker les commandes passées via le site web
 
 CREATE TABLE IF NOT EXISTS customer_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id UUID NOT NULL REFERENCES public.shops(id) ON DELETE CASCADE,
     
-    -- Référence à la boutique
-    shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-    
-    -- Informations client (pas de compte requis)
+    -- Informations client
     customer_name TEXT NOT NULL,
-    customer_phone TEXT NOT NULL,
+    customer_phone TEXT,
     customer_address TEXT,
     
-    -- Détails de la commande (JSON array)
-    items JSONB NOT NULL DEFAULT '[]'::jsonb,
-    -- Format: [{"id": "...", "name": "...", "price": 1000, "quantity": 2}, ...]
+    -- Commande (items_json conforme au rapport)
+    total_amount NUMERIC DEFAULT 0,
+    items_json JSONB DEFAULT '[]'::JSONB,
     
-    -- Montant total
-    total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-    
-    -- Mode de livraison
-    delivery_method TEXT CHECK (delivery_method IN ('pickup', 'delivery')) DEFAULT 'pickup',
-    
-    -- Note/message du client
+    -- Livraison
+    delivery_method TEXT DEFAULT 'pickup',
     order_note TEXT,
     
-    -- Statut de la commande
-    status TEXT CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'shipped', 'delivered', 'cancelled')) DEFAULT 'pending',
+    -- Statut
+    status TEXT DEFAULT 'pending',
     
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     confirmed_at TIMESTAMPTZ,
-    delivered_at TIMESTAMPTZ,
-    
-    -- Métadonnées (source, device, etc.)
-    metadata JSONB DEFAULT '{}'::jsonb
+    delivered_at TIMESTAMPTZ
 );
 
--- Index pour recherche rapide par boutique
+-- 🛡️ SAFETY: S'assurer que les colonnes existent même si la table existait déjà
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS items_json JSONB DEFAULT '[]'::JSONB;
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS order_note TEXT;
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_address TEXT;
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+
+-- Index
 CREATE INDEX IF NOT EXISTS idx_customer_orders_shop_id ON customer_orders(shop_id);
 CREATE INDEX IF NOT EXISTS idx_customer_orders_status ON customer_orders(status);
 CREATE INDEX IF NOT EXISTS idx_customer_orders_created_at ON customer_orders(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_customer_orders_phone ON customer_orders(customer_phone);
-
-COMMENT ON TABLE customer_orders IS 'Commandes passées via la vitrine web Velmo';
 
 
 -- ============================================================
--- 📦 PARTIE 4: TABLE "order_notifications" (NOTIFICATIONS)
--- ============================================================
--- Notifications push pour les apps Mobile/Desktop
-
-CREATE TABLE IF NOT EXISTS order_notifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    -- Référence à la boutique et commande
-    shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-    order_id UUID REFERENCES customer_orders(id) ON DELETE CASCADE,
-    
-    -- Destinataire (owner de la boutique)
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    
-    -- Type de notification
-    type TEXT CHECK (type IN (
-        'new_order',           -- Nouvelle commande
-        'order_confirmed',     -- Commande confirmée
-        'order_cancelled',     -- Commande annulée
-        'low_stock',           -- Stock faible
-        'out_of_stock'         -- Rupture de stock
-    )) NOT NULL,
-    
-    -- Contenu
-    title TEXT NOT NULL,
-    body TEXT NOT NULL,
-    
-    -- Données supplémentaires (pour deep linking)
-    data JSONB DEFAULT '{}'::jsonb,
-    
-    -- Statut de lecture
-    is_read BOOLEAN DEFAULT false,
-    read_at TIMESTAMPTZ,
-    
-    -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_order_notifications_shop_id ON order_notifications(shop_id);
-CREATE INDEX IF NOT EXISTS idx_order_notifications_user_id ON order_notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_order_notifications_is_read ON order_notifications(is_read);
-CREATE INDEX IF NOT EXISTS idx_order_notifications_created_at ON order_notifications(created_at DESC);
-
-COMMENT ON TABLE order_notifications IS 'Notifications pour les apps Mobile/Desktop';
-
-
--- ============================================================
--- 📦 PARTIE 5: TABLE "customer_favorites" (FAVORIS CLIENT)
--- ============================================================
--- Favoris sauvegardés côté serveur (optionnel, par téléphone)
-
-CREATE TABLE IF NOT EXISTS customer_favorites (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    -- Identification par téléphone (pas de compte)
-    customer_phone TEXT NOT NULL,
-    
-    -- Produit favori
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-    
-    -- Timestamp
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    -- Contrainte unique: un produit par client
-    UNIQUE(customer_phone, product_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_customer_favorites_phone ON customer_favorites(customer_phone);
-CREATE INDEX IF NOT EXISTS idx_customer_favorites_shop ON customer_favorites(shop_id);
-
-
--- ============================================================
--- 🔐 PARTIE 6: ROW LEVEL SECURITY (RLS) POLICIES
+-- 🔐 PARTIE 4: ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================
 
--- Activer RLS sur les nouvelles tables
+-- Activer RLS
 ALTER TABLE customer_orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customer_favorites ENABLE ROW LEVEL SECURITY;
 
--- 📋 CUSTOMER_ORDERS Policies
+-- ✅ PUBLIC: Lecture boutiques publiques
+DROP POLICY IF EXISTS "Public can read public shops" ON shops;
+CREATE POLICY "Public can read public shops" ON shops
+FOR SELECT TO anon, authenticated
+USING (is_public = true);
 
--- Les clients (anonymes) peuvent créer des commandes
-CREATE POLICY "Anyone can create orders" ON customer_orders
-    FOR INSERT TO anon, authenticated
-    WITH CHECK (true);
+-- ✅ PUBLIC: Lecture produits des boutiques publiques
+DROP POLICY IF EXISTS "Public can read products of public shops" ON products;
+CREATE POLICY "Public can read products of public shops" ON products
+FOR SELECT TO anon, authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM shops
+    WHERE shops.id = products.shop_id
+    AND shops.is_public = true
+  )
+);
 
--- Le propriétaire de la boutique peut voir ses commandes
-CREATE POLICY "Shop owner can view orders" ON customer_orders
-    FOR SELECT TO authenticated
-    USING (
-        shop_id IN (
-            SELECT id FROM shops WHERE owner_id = auth.uid()
-        )
-    );
+-- ✅ PUBLIC: Création de commandes pour boutiques publiques
+DROP POLICY IF EXISTS "Public can create web orders" ON customer_orders;
+CREATE POLICY "Public can create web orders" ON customer_orders
+FOR INSERT TO anon, authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM shops
+    WHERE shops.id = customer_orders.shop_id
+    AND shops.is_public = true
+  )
+);
 
--- Le propriétaire peut mettre à jour le statut
-CREATE POLICY "Shop owner can update order status" ON customer_orders
-    FOR UPDATE TO authenticated
-    USING (
-        shop_id IN (
-            SELECT id FROM shops WHERE owner_id = auth.uid()
-        )
-    )
-    WITH CHECK (
-        shop_id IN (
-            SELECT id FROM shops WHERE owner_id = auth.uid()
-        )
-    );
+-- 🔒 PRIVÉ: Lecture commandes (propriétaire uniquement)
+DROP POLICY IF EXISTS "Shop owners can read their web orders" ON customer_orders;
+CREATE POLICY "Shop owners can read their web orders" ON customer_orders
+FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM shops
+    WHERE shops.id = customer_orders.shop_id
+    AND shops.owner_id = auth.uid()
+  )
+);
 
--- 📋 ORDER_NOTIFICATIONS Policies
-
--- Le propriétaire peut voir ses notifications
-CREATE POLICY "User can view own notifications" ON order_notifications
-    FOR SELECT TO authenticated
-    USING (user_id = auth.uid());
-
--- Le propriétaire peut marquer comme lu
-CREATE POLICY "User can update own notifications" ON order_notifications
-    FOR UPDATE TO authenticated
-    USING (user_id = auth.uid())
-    WITH CHECK (user_id = auth.uid());
-
--- Insertion via trigger ou fonction serveur
-CREATE POLICY "System can insert notifications" ON order_notifications
-    FOR INSERT TO service_role
-    WITH CHECK (true);
-
--- 📋 CUSTOMER_FAVORITES Policies
-
--- N'importe qui peut créer des favoris
-CREATE POLICY "Anyone can add favorites" ON customer_favorites
-    FOR INSERT TO anon, authenticated
-    WITH CHECK (true);
-
--- N'importe qui peut voir ses favoris (par téléphone)
-CREATE POLICY "Anyone can view favorites by phone" ON customer_favorites
-    FOR SELECT TO anon, authenticated
-    USING (true);
-
--- Suppression par téléphone
-CREATE POLICY "Anyone can delete own favorites" ON customer_favorites
-    FOR DELETE TO anon, authenticated
-    USING (true);
+-- 🔒 PRIVÉ: Mise à jour commandes (propriétaire uniquement)
+DROP POLICY IF EXISTS "Shop owners can update their web orders" ON customer_orders;
+CREATE POLICY "Shop owners can update their web orders" ON customer_orders
+FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM shops
+    WHERE shops.id = customer_orders.shop_id
+    AND shops.owner_id = auth.uid()
+  )
+);
 
 
 -- ============================================================
--- ⚡ PARTIE 7: TRIGGERS & FONCTIONS AUTOMATIQUES
+-- � PARTIE 5: GRANTS
 -- ============================================================
 
--- Fonction pour créer une notification lors d'une nouvelle commande
-CREATE OR REPLACE FUNCTION create_order_notification()
-RETURNS TRIGGER AS $$
+GRANT SELECT ON public.shops TO anon;
+GRANT SELECT ON public.products TO anon;
+GRANT INSERT ON public.customer_orders TO anon;
+GRANT SELECT ON public.customer_orders TO authenticated;
+GRANT UPDATE ON public.customer_orders TO authenticated;
+
+
+-- ============================================================
+-- ⚡ PARTIE 6: FONCTIONS & TRIGGERS
+-- ============================================================
+
+-- Fonction pour générer un slug unique
+CREATE OR REPLACE FUNCTION generate_unique_slug(shop_name TEXT)
+RETURNS TEXT AS $$
 DECLARE
-    shop_owner_id UUID;
-    shop_name TEXT;
-    item_count INTEGER;
+    base_slug TEXT;
+    new_slug TEXT;
+    counter INTEGER := 0;
 BEGIN
-    -- Récupérer le propriétaire de la boutique
-    SELECT owner_id, name INTO shop_owner_id, shop_name
-    FROM shops WHERE id = NEW.shop_id;
+    -- Nettoyer le nom pour créer un slug
+    base_slug := lower(regexp_replace(shop_name, '[^a-zA-Z0-9]+', '-', 'g'));
+    base_slug := regexp_replace(base_slug, '^-+|-+$', '', 'g');
     
-    -- Compter les articles
-    SELECT jsonb_array_length(NEW.items) INTO item_count;
+    new_slug := base_slug;
     
-    -- Créer la notification
-    INSERT INTO order_notifications (
-        shop_id,
-        order_id,
-        user_id,
-        type,
-        title,
-        body,
-        data
-    ) VALUES (
-        NEW.shop_id,
-        NEW.id,
-        shop_owner_id,
-        'new_order',
-        '📦 Nouvelle commande !',
-        format('%s a commandé %s article(s) pour %s GNF', 
-               NEW.customer_name, 
-               item_count,
-               NEW.total_amount::TEXT),
-        jsonb_build_object(
-            'order_id', NEW.id,
-            'customer_name', NEW.customer_name,
-            'customer_phone', NEW.customer_phone,
-            'total_amount', NEW.total_amount,
-            'delivery_method', NEW.delivery_method
-        )
-    );
+    -- Vérifier l'unicité et incrémenter si nécessaire
+    WHILE EXISTS (SELECT 1 FROM shops WHERE slug = new_slug) LOOP
+        counter := counter + 1;
+        new_slug := base_slug || '-' || counter;
+    END LOOP;
     
-    -- Incrémenter le compteur de commandes de la boutique
-    UPDATE shops 
-    SET orders_count = COALESCE(orders_count, 0) + 1
-    WHERE id = NEW.shop_id;
-    
+    RETURN new_slug;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger pour générer automatiquement un slug
+CREATE OR REPLACE FUNCTION auto_generate_shop_slug()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Si le slug est vide, le générer
+    IF NEW.slug IS NULL OR NEW.slug = '' THEN
+        NEW.slug := generate_unique_slug(NEW.name);
+    END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
 
--- Créer le trigger
-DROP TRIGGER IF EXISTS trigger_new_order_notification ON customer_orders;
-CREATE TRIGGER trigger_new_order_notification
-    AFTER INSERT ON customer_orders
+DROP TRIGGER IF EXISTS trigger_auto_generate_shop_slug ON shops;
+CREATE TRIGGER trigger_auto_generate_shop_slug
+    BEFORE INSERT OR UPDATE ON shops
     FOR EACH ROW
-    EXECUTE FUNCTION create_order_notification();
-
+    EXECUTE FUNCTION auto_generate_shop_slug();
 
 -- Fonction pour mettre à jour updated_at automatiquement
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -341,53 +280,51 @@ CREATE TRIGGER trigger_update_customer_orders_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Trigger pour incrémenter orders_count
+CREATE OR REPLACE FUNCTION increment_shop_orders_count()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE shops 
+    SET orders_count = COALESCE(orders_count, 0) + 1
+    WHERE id = NEW.shop_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_increment_orders_count ON customer_orders;
+CREATE TRIGGER trigger_increment_orders_count
+    AFTER INSERT ON customer_orders
+    FOR EACH ROW
+    EXECUTE FUNCTION increment_shop_orders_count();
+
 
 -- ============================================================
--- 📊 PARTIE 8: VUES UTILES (OPTIONNEL)
+-- 📊 PARTIE 7: VÉRIFICATIONS
 -- ============================================================
 
--- Vue pour les commandes avec détails boutique
-CREATE OR REPLACE VIEW v_orders_with_shop AS
-SELECT 
-    co.*,
-    s.name as shop_name,
-    s.slug as shop_slug,
-    s.logo_url as shop_logo,
-    s.owner_id as shop_owner_id
-FROM customer_orders co
-JOIN shops s ON co.shop_id = s.id;
+-- Lister les tables créées/modifiées
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public' 
+AND table_name IN ('shops', 'products', 'customer_orders');
 
--- Vue pour les notifications non lues
-CREATE OR REPLACE VIEW v_unread_notifications AS
-SELECT 
-    n.*,
-    s.name as shop_name,
-    co.customer_name,
-    co.total_amount as order_total
-FROM order_notifications n
-LEFT JOIN shops s ON n.shop_id = s.id
-LEFT JOIN customer_orders co ON n.order_id = co.id
-WHERE n.is_read = false;
+-- Vérifier les colonnes de shops
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_name = 'shops'
+AND column_name IN ('slug', 'is_public', 'logo', 'cover', 'whatsapp', 'location', 'opening_hours')
+ORDER BY column_name;
+
+-- Vérifier que customer_orders a items_json
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'customer_orders'
+AND column_name = 'items_json';
 
 
 -- ============================================================
 -- ✅ FIN DU SCRIPT
 -- ============================================================
-
--- Vérification: Lister les nouvelles tables
-SELECT table_name 
-FROM information_schema.tables 
-WHERE table_schema = 'public' 
-AND table_name IN ('customer_orders', 'order_notifications', 'customer_favorites');
-
--- Vérification: Lister les nouvelles colonnes de shops
-SELECT column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_name = 'shops'
-AND column_name IN ('location', 'phone', 'whatsapp', 'opening_hours', 'is_verified', 'orders_count');
-
--- Vérification: Lister les nouvelles colonnes de products
-SELECT column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_name = 'products'
-AND column_name IN ('stock_quantity', 'is_popular', 'created_at');
+-- Si tout s'est bien passé, les boutiques avec is_public = true
+-- seront accessibles via velmo.market/{slug}
+-- ============================================================
