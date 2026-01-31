@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import ShopPage from './pages/ShopPage';
+import OrderPage from './pages/OrderPage';
 import { Search, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { Toaster, toast } from 'sonner';
@@ -16,6 +17,8 @@ function App() {
             <Routes>
                 {/* Route dynamique pour les boutiques */}
                 <Route path="/b/:slug" element={<ShopPage />} />
+                <Route path="/order/:orderId" element={<OrderPage />} />
+                <Route path="/receipt/:orderId" element={<OrderPage />} />
                 {/* Alias alternatif */}
                 <Route path="/:slug" element={<ShopPage />} />
                 {/* Page d'accueil */}

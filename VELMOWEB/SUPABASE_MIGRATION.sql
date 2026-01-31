@@ -115,8 +115,9 @@ CREATE TABLE IF NOT EXISTS customer_orders (
     customer_phone TEXT,
     customer_address TEXT,
     
-    -- Commande (items_json conforme au rapport)
+    -- Commande (double stockage pour compatibilité)
     total_amount NUMERIC DEFAULT 0,
+    items JSONB DEFAULT '[]'::JSONB,
     items_json JSONB DEFAULT '[]'::JSONB,
     
     -- Livraison
@@ -134,10 +135,32 @@ CREATE TABLE IF NOT EXISTS customer_orders (
 );
 
 -- 🛡️ SAFETY: S'assurer que les colonnes existent même si la table existait déjà
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::JSONB;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS items_json JSONB DEFAULT '[]'::JSONB;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS order_note TEXT;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_address TEXT;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
+
+-- ============================================================
+-- 📦 PARTIE 3.5: TABLE "order_notifications" (NOTIFICATIONS INTERNES)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS order_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id UUID REFERENCES public.shops(id) ON DELETE CASCADE,
+    order_id UUID REFERENCES public.customer_orders(id) ON DELETE CASCADE,
+    user_id UUID, -- L'ID de l'utilisateur à notifier (owner_id)
+    type TEXT DEFAULT 'new_order',
+    title TEXT,
+    body TEXT,
+    data JSONB DEFAULT '{}'::JSONB,
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_notifications_user_id ON order_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_order_notifications_is_read ON order_notifications(is_read) WHERE is_read = false;
 
 -- Index
 CREATE INDEX IF NOT EXISTS idx_customer_orders_shop_id ON customer_orders(shop_id);
@@ -280,22 +303,46 @@ CREATE TRIGGER trigger_update_customer_orders_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Trigger pour incrémenter orders_count
-CREATE OR REPLACE FUNCTION increment_shop_orders_count()
+-- Fonction groupée pour les actions après commande (Stats + Notifications)
+CREATE OR REPLACE FUNCTION handle_new_customer_order()
 RETURNS TRIGGER AS $$
+DECLARE
+    shop_owner_id UUID;
+    shop_exists_in_auth BOOLEAN;
 BEGIN
-    UPDATE shops 
-    SET orders_count = COALESCE(orders_count, 0) + 1
-    WHERE id = NEW.shop_id;
+    -- 1. Récupérer le propriétaire de la boutique
+    SELECT owner_id INTO shop_owner_id FROM shops WHERE id = NEW.shop_id;
+    
+    -- 2. Incrémenter le compteur de commandes
+    UPDATE shops SET orders_count = COALESCE(orders_count, 0) + 1 WHERE id = NEW.shop_id;
+
+    -- 3. Tenter de créer une notification (UNIQUEMENT si le propriétaire existe dans auth.users)
+    IF shop_owner_id IS NOT NULL THEN
+        -- On vérifie si l'ID existe dans auth.users pour éviter l'erreur 23503
+        SELECT EXISTS (SELECT 1 FROM auth.users WHERE id = shop_owner_id) INTO shop_exists_in_auth;
+        
+        IF shop_exists_in_auth THEN
+            INSERT INTO order_notifications (
+                shop_id, order_id, user_id, title, body, data
+            ) VALUES (
+                NEW.shop_id, NEW.id, shop_owner_id,
+                '📦 Nouvelle commande !',
+                format('%s a commandé pour %s', NEW.customer_name, NEW.total_amount::TEXT),
+                jsonb_build_object('order_id', NEW.id, 'total', NEW.total_amount)
+            );
+        END IF;
+    END IF;
+
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS trigger_increment_orders_count ON customer_orders;
-CREATE TRIGGER trigger_increment_orders_count
+-- Trigger unique pour gérer tout l'après-commande
+DROP TRIGGER IF EXISTS trigger_new_customer_order ON customer_orders;
+CREATE TRIGGER trigger_new_customer_order
     AFTER INSERT ON customer_orders
     FOR EACH ROW
-    EXECUTE FUNCTION increment_shop_orders_count();
+    EXECUTE FUNCTION handle_new_customer_order();
 
 
 -- ============================================================
@@ -315,11 +362,11 @@ WHERE table_name = 'shops'
 AND column_name IN ('slug', 'is_public', 'logo', 'cover', 'whatsapp', 'location', 'opening_hours')
 ORDER BY column_name;
 
--- Vérifier que customer_orders a items_json
+-- Vérifier les colonnes de customer_orders
 SELECT column_name, data_type
 FROM information_schema.columns
 WHERE table_name = 'customer_orders'
-AND column_name = 'items_json';
+AND column_name IN ('items_json', 'customer_location');
 
 
 -- ============================================================

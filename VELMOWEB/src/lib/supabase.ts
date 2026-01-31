@@ -108,6 +108,7 @@ export interface OrderItem {
   name: string;
   price: number;
   quantity: number;
+  photo_url?: string | null;
 }
 
 export interface CustomerOrder {
@@ -118,6 +119,7 @@ export interface CustomerOrder {
   customer_name: string;
   customer_phone: string;
   customer_address?: string | null;
+  customer_location?: { lat: number; lng: number } | null;
 
   // 💰 COMMANDE
   total_amount: number;
