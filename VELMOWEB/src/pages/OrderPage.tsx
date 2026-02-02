@@ -25,11 +25,18 @@ export default function OrderPage() {
             setError(null);
 
             // 1. Charger la commande
-            const { data: orderData, error: orderError } = await supabase
-                .from('customer_orders')
-                .select('*')
-                .eq('id', orderId)
-                .single();
+            // Vérifier si c'est un UUID valide (regex simple)
+            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId || '');
+
+            let query = supabase.from('customer_orders').select('*');
+
+            if (isUUID) {
+                query = query.eq('id', orderId);
+            } else {
+                query = query.eq('short_ref', orderId);
+            }
+
+            const { data: orderData, error: orderError } = await query.single();
 
             if (orderError || !orderData) {
                 console.error('Erreur commande:', orderError);
@@ -168,7 +175,7 @@ export default function OrderPage() {
                 <div className="receipt-header">
                     <div className="receipt-shop-info">
                         <h1>{shop ? shop.name : 'Boutique Velmo'}</h1>
-                        <p className="order-ref">Référence: #{orderId?.slice(0, 8).toUpperCase()}</p>
+                        <p className="order-ref">Référence: #{order.short_ref || orderId?.slice(0, 8).toUpperCase()}</p>
                         <p className="order-date">
                             <Calendar size={14} />
                             {formatDate(order.created_at)}

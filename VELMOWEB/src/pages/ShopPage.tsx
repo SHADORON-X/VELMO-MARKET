@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, memo, type FormEvent } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, type Shop, type Product, type OrderItem } from '../lib/supabase';
 import {
     ShoppingBag, Plus, Minus, Trash2, X, Check, Loader2, Store, ShoppingCart,
     Moon, Sun, MapPin, Truck, Search, Clock, Heart, Share2, MessageCircle,
-    Shield, CreditCard, Users, Filter, ChevronDown, Copy, CheckCircle2, BadgeCheck, Printer
+    Shield, CreditCard, Users, Filter, ChevronDown, Copy, CheckCircle2, BadgeCheck, Printer, Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,7 +26,14 @@ type FilterOption = 'all' | 'available' | 'new';
 
 export default function ShopPage() {
     const { slug } = useParams<{ slug: string }>();
+    const navigate = useNavigate();
     const [shop, setShop] = useState<Shop | null>(null);
+
+    // 🕵️ Track Order
+    const [isTrackOpen, setIsTrackOpen] = useState(false);
+    const [trackInput, setTrackInput] = useState(() => {
+        return localStorage.getItem('velmo_last_order_ref') || '';
+    });
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -54,6 +61,7 @@ export default function ShopPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [orderSuccess, setOrderSuccess] = useState(false);
     const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(null);
+    const [submittedOrderRef, setSubmittedOrderRef] = useState<string | null>(null);
 
     // 📋 Form State
     const [customerInfo, setCustomerInfo] = useState<{
@@ -61,7 +69,16 @@ export default function ShopPage() {
         phone: string;
         address: string;
         location?: { lat: number; lng: number };
-    }>({ name: '', phone: '', address: '' });
+    }>(() => {
+        const saved = localStorage.getItem('velmo_customer_info');
+        return saved ? JSON.parse(saved) : { name: '', phone: '', address: '' };
+    });
+
+    // 🕵️ Analytique locale (Produits les plus vus)
+    const [productViews, setProductViews] = useState<Record<string, number>>(() => {
+        const saved = localStorage.getItem('velmo_product_views');
+        return saved ? JSON.parse(saved) : {};
+    });
     const [orderNote, setOrderNote] = useState('');
     const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('pickup');
 
@@ -117,12 +134,36 @@ export default function ShopPage() {
     }, [favorites]);
 
     useEffect(() => {
+        localStorage.setItem('velmo_customer_info', JSON.stringify(customerInfo));
+    }, [customerInfo]);
+
+    useEffect(() => {
+        localStorage.setItem('velmo_product_views', JSON.stringify(productViews));
+    }, [productViews]);
+
+    useEffect(() => {
         if (slug) loadShopData();
     }, [slug]);
 
     // ============================================================
     // 📊 COMPUTED VALUES
     // ============================================================
+
+    const recommendedProducts = useMemo(() => {
+        if (!products.length) return [];
+
+        return [...products]
+            .map(p => {
+                // Score de pertinence : favoris (100) + vues (10 par vue)
+                let score = 0;
+                if (favorites.includes(p.id)) score += 100;
+                score += (productViews[p.id] || 0) * 10;
+                return { ...p, relevanceScore: score };
+            })
+            .filter(p => p.relevanceScore > 0)
+            .sort((a, b) => b.relevanceScore - a.relevanceScore)
+            .slice(0, 6);
+    }, [products, favorites, productViews]);
 
     // ============================================================
     // 🔧 HELPERS (Déplacés ici pour éviter les erreurs d'initialisation)
@@ -230,6 +271,11 @@ export default function ShopPage() {
                             onClick={() => {
                                 setSelectedProduct(product);
                                 setModalQuantity(1);
+                                // Incrémenter les vues pour l'intelligence locale
+                                setProductViews(prev => ({
+                                    ...prev,
+                                    [product.id]: (prev[product.id] || 0) + 1
+                                }));
                             }}
                         >
                             <div className="card-img-container">
@@ -244,6 +290,28 @@ export default function ShopPage() {
                                     />
                                 ) : (
                                     <Store size={40} className="placeholder-icon" />
+                                )}
+
+                                {/* 🔥 Badge Intelligent de Tendance */}
+                                {productViews[product.id] > 3 && (
+                                    <div className="trend-badge" style={{
+                                        position: 'absolute',
+                                        bottom: '8px',
+                                        left: '8px',
+                                        background: 'rgba(255, 255, 255, 0.9)',
+                                        backdropFilter: 'blur(4px)',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '10px',
+                                        fontWeight: 800,
+                                        color: 'var(--primary)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                    }}>
+                                        <Search size={10} /> POPULAIRE
+                                    </div>
                                 )}
 
                                 <button
@@ -527,7 +595,7 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
             const { data, error } = await supabase
                 .from('customer_orders')
                 .insert(orderData)
-                .select('id')
+                .select('id, short_ref')
                 .single();
 
             if (error) {
@@ -537,6 +605,13 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
 
             console.log('✅ Commande créée:', data);
             setSubmittedOrderId(data?.id || null);
+            setSubmittedOrderRef(data?.short_ref || null);
+
+            // 💾 Sauvegarde intelligente pour le tracking futur
+            if (data?.short_ref) {
+                localStorage.setItem('velmo_last_order_ref', data.short_ref);
+            }
+
             setOrderSuccess(true);
             setCart([]);
             localStorage.removeItem('velmo_cart');
@@ -633,14 +708,36 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                 ))}
             </div>
 
-            {/* 🌙 Theme Toggle */}
-            <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="theme-switch"
-                title="Changer le thème"
-            >
-                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
+            {/* 🔝 Top Actions */}
+            <div className="top-actions" style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                zIndex: 50,
+                display: 'flex',
+                gap: '8px'
+            }}>
+                <button
+                    onClick={() => setIsTrackOpen(true)}
+                    className="theme-switch"
+                    title="Suivre ma commande"
+                    style={{ position: 'relative', top: 0, right: 0 }}
+                >
+                    <Package size={20} />
+                </button>
+                <button
+                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                    className="theme-switch"
+                    title="Changer le thème"
+                    style={{ position: 'relative', top: 0, right: 0 }}
+                >
+                    {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                </button>
+            </div>
+
+            {/* 🆕 FAB Track supprimé à la demande de l'utilisateur ("sale") - Accessible via header */}
+
+            {/* ===================== SHOP HEADER ===================== */}
 
             {/* ===================== SHOP HEADER ===================== */}
             <header className="shop-header">
@@ -720,7 +817,7 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
 
                 {/* 🔍 Search & Filter */}
                 <div className="search-filter-row">
-                    <div className="search-container">
+                    <div className="search-container" style={{ position: 'relative' }}>
                         <Search className="search-icon" size={20} />
                         <input
                             type="text"
@@ -729,6 +826,74 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="search-input"
                         />
+                        {/* 🔍 Résultats de recherche instantanés (Pop-up) */}
+                        <AnimatePresence>
+                            {searchQuery.length > 0 && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    className="search-dropdown"
+                                    style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        backgroundColor: 'var(--bg-secondary)',
+                                        borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
+                                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
+                                        zIndex: 100,
+                                        marginTop: '4px',
+                                        border: '1px solid var(--border-color)',
+                                        maxHeight: '60vh',
+                                        overflowY: 'auto',
+                                        padding: '0.5rem'
+                                    }}
+                                >
+                                    {filteredAndSortedProducts.length > 0 ? (
+                                        filteredAndSortedProducts.map(product => (
+                                            <div
+                                                key={product.id}
+                                                onClick={() => {
+                                                    setSelectedProduct(product);
+                                                    setSearchQuery(''); // Optionnel : effacer la recherche après sélection
+                                                }}
+                                                style={{
+                                                    display: 'flex',
+                                                    gap: '12px',
+                                                    padding: '10px',
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    cursor: 'pointer',
+                                                    alignItems: 'center'
+                                                }}
+                                                className="search-result-item"
+                                            >
+                                                <div style={{ width: '40px', height: '40px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0 }}>
+                                                    {product.photo_url ? (
+                                                        <img src={getPublicImageUrl(product.photo_url) || ''} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    ) : (
+                                                        <div style={{ width: '100%', height: '100%', backgroundColor: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <Store size={16} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <h4 style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-primary)' }}>{product.name}</h4>
+                                                    <p style={{ fontSize: '0.8rem', margin: 0, color: 'var(--primary)', fontWeight: 600 }}>{formatPrice(product.price_sale)}</p>
+                                                </div>
+                                                <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Plus size={14} />
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                            <p>Aucun produit trouvé</p>
+                                        </div>
+                                    )}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                     <button
                         className={`filter-toggle ${showFilters ? 'active' : ''}`}
@@ -807,6 +972,65 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
 
             {/* ===================== PRODUCTS GRID ===================== */}
             <section className="products-section">
+                {/* ✨ Section Intelligente "Pour Vous" */}
+                {!searchQuery && selectedCategory === 'Tout' && recommendedProducts.length > 0 && (
+                    <div className="recommendations-container" style={{ marginBottom: '2rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem', padding: '0 4px' }}>
+                            <div style={{ width: '4px', height: '20px', background: 'var(--primary)', borderRadius: '2px' }}></div>
+                            <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Pour vous</h3>
+                        </div>
+                        <div className="recommendations-scroll" style={{
+                            display: 'flex',
+                            gap: '12px',
+                            overflowX: 'auto',
+                            paddingBottom: '12px',
+                            margin: '0 -1rem',
+                            padding: '0 1rem 12px 1rem',
+                            scrollbarWidth: 'none'
+                        }}>
+                            {recommendedProducts.map((product) => (
+                                <motion.div
+                                    key={`rec-${product.id}`}
+                                    className="recommendation-card"
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setSelectedProduct(product)}
+                                    style={{
+                                        flex: '0 0 160px',
+                                        background: 'var(--bg-secondary)',
+                                        borderRadius: 'var(--radius-lg)',
+                                        overflow: 'hidden',
+                                        border: '1px solid var(--border-color)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <div style={{ width: '100%', height: '120px', position: 'relative' }}>
+                                        {product.photo_url ? (
+                                            <img
+                                                src={getPublicImageUrl(product.photo_url) || ''}
+                                                alt={product.name}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                        ) : (
+                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-tertiary)' }}>
+                                                <Store size={24} style={{ opacity: 0.3 }} />
+                                            </div>
+                                        )}
+                                        {productViews[product.id] > 5 && (
+                                            <div style={{ position: 'absolute', top: '6px', right: '6px', background: 'var(--primary)', color: 'white', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                                                POPULAIRE
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ padding: '8px' }}>
+                                        <h4 style={{ fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</h4>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, marginTop: '2px' }}>{formatPrice(product.price_sale)}</p>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {productGrid}
             </section>
 
@@ -898,8 +1122,8 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
 
                                     {submittedOrderId && (
                                         <div className="order-id">
-                                            <span>Réf: #{submittedOrderId.slice(0, 8).toUpperCase()}</span>
-                                            <button onClick={() => copyToClipboard(submittedOrderId)}>
+                                            <span>Réf: #{submittedOrderRef || submittedOrderId?.slice(0, 8).toUpperCase()}</span>
+                                            <button onClick={() => copyToClipboard(submittedOrderRef || submittedOrderId || '')}>
                                                 {copiedLink ? <Check size={16} /> : <Copy size={16} />}
                                             </button>
                                         </div>
@@ -925,7 +1149,12 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                                                 width: '100%',
                                                 textDecoration: 'none',
                                                 display: 'flex',
-                                                justifyContent: 'center'
+                                                justifyContent: 'center',
+                                                backgroundColor: 'var(--primary)',
+                                                color: 'white',
+                                                zIndex: 10,
+                                                position: 'relative',
+                                                cursor: 'pointer'
                                             }}
                                         >
                                             <Printer size={20} />
@@ -1202,8 +1431,8 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                                                     setSelectedProduct(null);
                                                 }}
                                             >
-                                                <ShoppingCart size={20} />
-                                                Ajouter au panier - {formatPrice(selectedProduct.price_sale * modalQuantity)}
+                                                <ShoppingBag size={20} />
+                                                Ajouter au panier ({formatPrice(selectedProduct.price_sale * modalQuantity)})
                                             </button>
                                         </>
                                     )}
@@ -1213,6 +1442,66 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                     </>
                 )}
             </AnimatePresence>
-        </div >
+
+            {/* 🕵️ Track Order Modal */}
+            <AnimatePresence>
+                {isTrackOpen && (
+                    <>
+                        <motion.div
+                            className="modal-overlay"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsTrackOpen(false)}
+                        />
+                        <motion.div
+                            className="modal-content"
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            style={{ maxWidth: '400px', width: '90%', margin: 'auto' }}
+                        >
+                            <button className="modal-close" onClick={() => setIsTrackOpen(false)}>
+                                <X size={24} />
+                            </button>
+
+                            <div className="modal-header">
+                                <Package size={32} style={{ color: 'var(--primary)', marginBottom: '1rem' }} />
+                                <h2>Suivre ma commande</h2>
+                                <p style={{ color: 'var(--text-muted)' }}>
+                                    Entrez votre numéro de référence pour afficher votre ticket.
+                                </p>
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: '1.5rem' }}>
+                                <label className="form-label">Code Suivi (Ex: CMD-X7Y8...)</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Entrez votre code..."
+                                    value={trackInput}
+                                    onChange={(e) => setTrackInput(e.target.value.toUpperCase())}
+                                    autoFocus
+                                />
+                            </div>
+
+                            <button
+                                className="btn-checkout"
+                                style={{ width: '100%', marginTop: '1rem', justifyContent: 'center' }}
+                                disabled={!trackInput.trim()}
+                                onClick={() => {
+                                    if (trackInput.trim()) {
+                                        navigate(`/receipt/${trackInput.trim()}`);
+                                    }
+                                }}
+                            >
+                                <Search size={20} />
+                                Rechercher
+                            </button>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }

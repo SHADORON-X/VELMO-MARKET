@@ -1656,10 +1656,13 @@ textarea.form-input {
     position: fixed;
     inset: 0;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
+    /* Centré verticalement (était flex-end) */
     justify-content: center;
     z-index: 251;
     pointer-events: none;
+    padding: 1rem;
+    /* Ajout d'espacement pour l'effet flottant */
 }
 
 .product-modal-content {
@@ -1667,20 +1670,23 @@ textarea.form-input {
     max-width: 500px;
     max-height: 85vh;
     background: var(--bg-secondary);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-radius: var(--radius-xl);
+    /* Arrondi complet */
     overflow: hidden;
     pointer-events: auto;
     position: relative;
+    box-shadow: var(--shadow-lg), 0 0 0 1px var(--border-color);
+    /* Ombre accentuée */
+    display: flex;
+    flex-direction: column;
 }
 
 @media (min-width: 640px) {
     .product-modal-container {
-        align-items: center;
         padding: 2rem;
     }
 
     .product-modal-content {
-        border-radius: var(--radius-xl);
         max-height: 90vh;
     }
 }

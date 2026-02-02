@@ -113,6 +113,7 @@ export interface OrderItem {
 
 export interface CustomerOrder {
   id?: string;
+  short_ref?: string;
   shop_id: string;
 
   // 👤 INFORMATIONS CLIENT

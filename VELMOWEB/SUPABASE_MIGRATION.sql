@@ -141,6 +141,8 @@ ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS order_note TEXT;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_address TEXT;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_phone TEXT;
 ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
+ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS short_ref TEXT;
+ALTER TABLE customer_orders ADD CONSTRAINT unique_short_ref UNIQUE (short_ref);
 
 -- ============================================================
 -- 📦 PARTIE 3.5: TABLE "order_notifications" (NOTIFICATIONS INTERNES)
@@ -148,7 +150,7 @@ ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
 
 CREATE TABLE IF NOT EXISTS order_notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    shop_id UUID REFERENCES public.shops(id) ON DELETE CASCADE,
+    shop_id UUID REFERENCES public.shops(id) ON DELETE CASCADE,                                                                                                  
     order_id UUID REFERENCES public.customer_orders(id) ON DELETE CASCADE,
     user_id UUID, -- L'ID de l'utilisateur à notifier (owner_id)
     type TEXT DEFAULT 'new_order',
@@ -316,9 +318,8 @@ BEGIN
     -- 2. Incrémenter le compteur de commandes
     UPDATE shops SET orders_count = COALESCE(orders_count, 0) + 1 WHERE id = NEW.shop_id;
 
-    -- 3. Tenter de créer une notification (UNIQUEMENT si le propriétaire existe dans auth.users)
+    -- 3. Tenter de créer une notification
     IF shop_owner_id IS NOT NULL THEN
-        -- On vérifie si l'ID existe dans auth.users pour éviter l'erreur 23503
         SELECT EXISTS (SELECT 1 FROM auth.users WHERE id = shop_owner_id) INTO shop_exists_in_auth;
         
         IF shop_exists_in_auth THEN
@@ -327,8 +328,8 @@ BEGIN
             ) VALUES (
                 NEW.shop_id, NEW.id, shop_owner_id,
                 '📦 Nouvelle commande !',
-                format('%s a commandé pour %s', NEW.customer_name, NEW.total_amount::TEXT),
-                jsonb_build_object('order_id', NEW.id, 'total', NEW.total_amount)
+                format('%s a commandé pour %s (%s)', NEW.customer_name, NEW.total_amount::TEXT, NEW.short_ref),
+                jsonb_build_object('order_id', NEW.id, 'total', NEW.total_amount, 'ref', NEW.short_ref)
             );
         END IF;
     END IF;
@@ -336,6 +337,24 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger pour générer short_ref avant insertion
+CREATE OR REPLACE FUNCTION generate_short_ref_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.short_ref IS NULL THEN
+        -- Génère un ID type CMD-X7Y8Z9 (8 chars max, facile à lire)
+        NEW.short_ref := 'CMD-' || upper(substring(md5(NEW.id::text || clock_timestamp()::text) from 1 for 6));
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_generate_short_ref ON customer_orders;
+CREATE TRIGGER trigger_generate_short_ref
+    BEFORE INSERT ON customer_orders
+    FOR EACH ROW
+    EXECUTE FUNCTION generate_short_ref_trigger();
 
 -- Trigger unique pour gérer tout l'après-commande
 DROP TRIGGER IF EXISTS trigger_new_customer_order ON customer_orders;
