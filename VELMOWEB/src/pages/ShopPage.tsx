@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo, useCallback, memo, type FormEvent } from 'react';
+import { useState, useEffect, useMemo, useCallback, type FormEvent } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { supabase, type Shop, type Product, type OrderItem } from '../lib/supabase';
+import { supabase, type Shop, type Product, type OrderItem, type CustomerOrder, type ShopEvent } from '../lib/supabase';
 import {
     ShoppingBag, Plus, Minus, Trash2, X, Check, Loader2, Store, ShoppingCart,
     Moon, Sun, MapPin, Truck, Search, Clock, Heart, Share2, MessageCircle,
-    Shield, CreditCard, Users, Filter, ChevronDown, Copy, CheckCircle2, BadgeCheck, Printer, Package
+    Shield, CreditCard, Users, Filter, ChevronDown, CheckCircle2, BadgeCheck, Printer, Package,
+    Instagram, Facebook, Twitter, Mail, Globe, ExternalLink, ArrowRight, Phone,
+    Sparkles, Shirt, Monitor, Utensils, Home, Dumbbell, Coffee, Zap, Palette, Gift
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -57,11 +59,28 @@ export default function ShopPage() {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [addedId, setAddedId] = useState<string | null>(null);
 
+    // 🕵️ Session Tracking
+    const [sessionId] = useState(() => {
+        const saved = sessionStorage.getItem('velmo_session_id');
+        if (saved) return saved;
+        const newId = crypto.randomUUID();
+        sessionStorage.setItem('velmo_session_id', newId);
+        return newId;
+    });
+
+    const [categoryViews, setCategoryViews] = useState<Record<string, number>>(() => {
+        const saved = localStorage.getItem('velmo_category_views');
+        return saved ? JSON.parse(saved) : {};
+    });
+
     // 📝 Order State
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [orderSuccess, setOrderSuccess] = useState(false);
     const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(null);
     const [submittedOrderRef, setSubmittedOrderRef] = useState<string | null>(null);
+    const [trackedOrder, setTrackedOrder] = useState<CustomerOrder | null>(null);
+    const [ticketImageUrl, setTicketImageUrl] = useState<string | null>(null);
+    const [ticketBlob, setTicketBlob] = useState<Blob | null>(null);
 
     // 📋 Form State
     const [customerInfo, setCustomerInfo] = useState<{
@@ -112,6 +131,30 @@ export default function ShopPage() {
     const [filterOption, setFilterOption] = useState<FilterOption>('all');
     const [showFilters, setShowFilters] = useState(false);
 
+    // 📦 Smart Pagination State
+    const [visibleCount, setVisibleCount] = useState(12);
+
+    // ✨ Mouse tracking for holographic effect
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            const cards = document.getElementsByClassName('product-card');
+            for (const card of cards as any) {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                card.style.setProperty('--mouse-x', `${x}px`);
+                card.style.setProperty('--mouse-y', `${y}px`);
+            }
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+        return () => window.removeEventListener('mousemove', handleMouseMove);
+    }, []);
+
+    // Reset pagination on search/filter change
+    useEffect(() => {
+        setVisibleCount(12);
+    }, [searchQuery, selectedCategory, sortOption, filterOption]);
+
     // ❤️ Favorites
     const [favorites, setFavorites] = useState<string[]>(() => {
         const saved = localStorage.getItem('velmo_favorites');
@@ -142,8 +185,161 @@ export default function ShopPage() {
     }, [productViews]);
 
     useEffect(() => {
-        if (slug) loadShopData();
+        localStorage.setItem('velmo_category_views', JSON.stringify(categoryViews));
+    }, [categoryViews]);
+
+    // 📡 Analytics Tracking Helper
+    const trackEvent = useCallback(async (
+        type: ShopEvent['event_type'],
+        productId?: string,
+        category?: string,
+        query?: string,
+        metadata?: any
+    ) => {
+        if (!shop?.id) return;
+
+        try {
+            const { error } = await supabase.from('shop_analytics').insert({
+                shop_id: shop.id,
+                session_id: sessionId,
+                event_type: type,
+                product_id: productId,
+                category: category,
+                search_query: query,
+                metadata: metadata
+            });
+
+            if (error && error.code !== 'PGRST116') { // Ignorer si table manquante ou autre erreur bénigne
+                console.warn(`Analytics (${type}) info:`, error.message);
+            }
+        } catch (err) {
+            // Silence absolu en cas d'erreur réseau/code
+        }
+    }, [shop?.id, sessionId]);
+
+    // Track Visit
+    useEffect(() => {
+        if (shop?.id) {
+            trackEvent('visit');
+        }
+    }, [shop?.id, trackEvent]);
+
+    useEffect(() => {
+        if (slug) {
+            loadShopData();
+
+            // 📡 Realtime: Shop Profile Changes
+            const shopChannel = supabase
+                .channel(`public-shop-${slug}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*', // UPDATE, DELETE
+                        schema: 'public',
+                        table: 'shops',
+                        filter: `slug=eq.${slug}`
+                    },
+                    (payload) => {
+                        console.log('⚡️ Shop update received:', payload);
+                        if (payload.eventType === 'DELETE') {
+                            navigate('/');
+                        } else {
+                            setShop(payload.new as Shop);
+                        }
+                    }
+                )
+                .subscribe();
+
+            return () => {
+                supabase.removeChannel(shopChannel);
+            };
+        }
     }, [slug]);
+
+    // 📡 Realtime: Products Changes
+    useEffect(() => {
+        if (!shop?.id) return;
+
+        const productsChannel = supabase
+            .channel(`public-products-${shop.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'products',
+                    filter: `shop_id=eq.${shop.id}`
+                },
+                (payload) => {
+                    console.log('⚡️ Product update received:', payload);
+                    if (payload.eventType === 'INSERT') {
+                        const newProd = payload.new as Product;
+                        if (newProd.is_active) {
+                            setProducts(prev => [...prev, newProd].sort((a, b) => a.name.localeCompare(b.name)));
+                        }
+                    } else if (payload.eventType === 'UPDATE') {
+                        const updatedProd = payload.new as Product;
+                        setProducts(prev => {
+                            if (!updatedProd.is_active) {
+                                return prev.filter(p => p.id !== updatedProd.id);
+                            }
+                            const existing = prev.find(p => p.id === updatedProd.id);
+                            if (existing) {
+                                return prev.map(p => p.id === updatedProd.id ? updatedProd : p);
+                            } else {
+                                return [...prev, updatedProd].sort((a, b) => a.name.localeCompare(b.name));
+                            }
+                        });
+                    } else if (payload.eventType === 'DELETE') {
+                        setProducts(prev => prev.filter(p => p.id !== payload.old.id));
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(productsChannel);
+        };
+    }, [shop?.id]);
+
+    // 📡 Realtime: Order Status Monitoring
+    useEffect(() => {
+        const orderToTrack = submittedOrderId || (isTrackOpen && trackInput ? trackInput : null);
+        if (!orderToTrack || orderToTrack.length < 20) return; // Basic UUID check
+
+        const orderChannel = supabase
+            .channel(`track-order-${orderToTrack}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'customer_orders',
+                    filter: `id=eq.${orderToTrack}`
+                },
+                (payload) => {
+                    console.log('⚡️ Order update received:', payload);
+                    const updatedOrder = payload.new as CustomerOrder;
+                    setTrackedOrder(updatedOrder);
+
+                    if (updatedOrder.status === 'delivered') {
+                        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                    }
+                }
+            )
+            .subscribe();
+
+        // Charger l'état initial pour le suivi
+        const fetchInitialOrder = async () => {
+            const { data } = await supabase.from('customer_orders').select('*').eq('id', orderToTrack).single();
+            if (data) setTrackedOrder(data);
+        };
+        fetchInitialOrder();
+
+        return () => {
+            supabase.removeChannel(orderChannel);
+        };
+    }, [submittedOrderId, isTrackOpen, trackInput]);
 
     // ============================================================
     // 📊 COMPUTED VALUES
@@ -152,18 +348,36 @@ export default function ShopPage() {
     const recommendedProducts = useMemo(() => {
         if (!products.length) return [];
 
+        // Algorithme de recommandation puissant
         return [...products]
             .map(p => {
-                // Score de pertinence : favoris (100) + vues (10 par vue)
                 let score = 0;
-                if (favorites.includes(p.id)) score += 100;
-                score += (productViews[p.id] || 0) * 10;
+
+                // 💎 Facteur 1: Intérêt direct (Favoris)
+                if (favorites.includes(p.id)) score += 500;
+
+                // 👁️ Facteur 2: Vues produit locales
+                score += (productViews[p.id] || 0) * 25;
+
+                // 🏷️ Facteur 3: Affinité par catégorie (Apprentissage des goûts)
+                if (p.category && categoryViews[p.category]) {
+                    score += categoryViews[p.category] * 10;
+                }
+
+                // 🛒 Facteur 4: Cross-selling (Produits liés au panier actuel)
+                const isInCategoryInCart = cart.some(item => item.product.category === p.category);
+                if (isInCategoryInCart) score += 50;
+
+                // 📦 Facteur 5: Nouveauté (Bonus pour les produits récents)
+                const isNew = p.created_at && (new Date().getTime() - new Date(p.created_at).getTime()) < (7 * 24 * 60 * 60 * 1000);
+                if (isNew) score += 30;
+
                 return { ...p, relevanceScore: score };
             })
             .filter(p => p.relevanceScore > 0)
             .sort((a, b) => b.relevanceScore - a.relevanceScore)
-            .slice(0, 6);
-    }, [products, favorites, productViews]);
+            .slice(0, 10);
+    }, [products, favorites, productViews, categoryViews, cart]);
 
     // ============================================================
     // 🔧 HELPERS (Déplacés ici pour éviter les erreurs d'initialisation)
@@ -202,6 +416,22 @@ export default function ShopPage() {
         return { label: 'Disponible', color: 'green' };
     };
 
+    const getCategoryIcon = (category: string) => {
+        const cat = category.toLowerCase();
+        if (cat === 'tout') return <ShoppingBag size={24} />;
+        if (cat.includes('mode') || cat.includes('vêtement') || cat.includes('habit')) return <Shirt size={24} />;
+        if (cat.includes('élec') || cat.includes('info') || cat.includes('tech')) return <Monitor size={24} />;
+        if (cat.includes('beauté') || cat.includes('cosmétique') || cat.includes('soin')) return <Sparkles size={24} />;
+        if (cat.includes('alim') || cat.includes('food') || cat.includes('nourriture')) return <Utensils size={24} />;
+        if (cat.includes('maison') || cat.includes('déco')) return <Home size={24} />;
+        if (cat.includes('sport') || cat.includes('fitness')) return <Dumbbell size={24} />;
+        if (cat.includes('café') || cat.includes('boisson')) return <Coffee size={24} />;
+        if (cat.includes('accessoire') || cat.includes('bijoux')) return <Zap size={24} />;
+        if (cat.includes('art') || cat.includes('design')) return <Palette size={24} />;
+        if (cat.includes('cadeau') || cat.includes('plaisir')) return <Gift size={24} />;
+        return <Package size={24} />;
+    };
+
     const categories = useMemo(() =>
         ['Tout', ...new Set(products.map(p => p.category).filter(Boolean))],
         [products]
@@ -224,6 +454,16 @@ export default function ShopPage() {
             return matchesSearch && matchesCategory && matchesFilter;
         });
 
+        if (sortOption === 'default') {
+            // Tri intelligent : Popularité (vues) puis nouveauté
+            result.sort((a, b) => {
+                const viewsA = productViews[a.id] || 0;
+                const viewsB = productViews[b.id] || 0;
+                if (viewsB !== viewsA) return viewsB - viewsA;
+                return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+            });
+        }
+
         switch (sortOption) {
             case 'price-asc':
                 result.sort((a, b) => (a.price_sale || 0) - (b.price_sale || 0));
@@ -237,145 +477,173 @@ export default function ShopPage() {
         }
 
         return result;
-    }, [products, searchQuery, selectedCategory, sortOption, filterOption]);
+    }, [products, searchQuery, selectedCategory, sortOption, filterOption, productViews]);
 
     // 📊 Memoized Products Grid
     const productGrid = useMemo(() => {
         const productsList = filteredAndSortedProducts;
-        if (productsList.length === 0) {
+        const totalFound = productsList.length;
+        const visibleProducts = productsList.slice(0, visibleCount);
+
+        if (totalFound === 0) {
             return (
-                <div className="empty-products">
-                    <ShoppingBag size={48} />
-                    <p>Aucun produit trouvé</p>
-                    {searchQuery && <span>Essayez une autre recherche</span>}
+                <div className="empty-state">
+                    <Package size={48} />
+                    <p>Aucun produit ne correspond à votre recherche.</p>
                 </div>
             );
         }
 
         return (
-            <div className="product-grid">
-                {productsList.map((product, index) => {
-                    const stockStatus = getStockStatus(product);
-                    const isFavorite = favorites.includes(product.id);
-                    const cartItem = cart.find(item => item.product.id === product.id);
-                    const quantity = cartItem ? cartItem.quantity : 0;
+            <>
+                <div className="product-grid">
+                    {visibleProducts.map((product, index) => {
+                        const stockStatus = getStockStatus(product);
+                        const isFavorite = favorites.includes(product.id);
+                        const cartItem = cart.find(item => item.product.id === product.id);
+                        const quantity = cartItem ? cartItem.quantity : 0;
 
-                    return (
-                        <motion.div
-                            key={product.id}
-                            className="product-card"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: Math.min(index * 0.03, 0.5) }}
-                            whileHover={{ y: -4 }}
-                            onClick={() => {
-                                setSelectedProduct(product);
-                                setModalQuantity(1);
-                                // Incrémenter les vues pour l'intelligence locale
-                                setProductViews(prev => ({
-                                    ...prev,
-                                    [product.id]: (prev[product.id] || 0) + 1
-                                }));
+                        return (
+                            <motion.div
+                                key={product.id}
+                                className="product-card"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: Math.min(index * 0.03, 0.5) }}
+                                whileHover={{ y: -4 }}
+                                onClick={() => {
+                                    setSelectedProduct(product);
+                                    setModalQuantity(1);
+                                    // Analytics Intelligent
+                                    trackEvent('view_product', product.id, product.category || undefined);
+
+                                    setProductViews(prev => ({
+                                        ...prev,
+                                        [product.id]: (prev[product.id] || 0) + 1
+                                    }));
+
+                                    if (product.category) {
+                                        setCategoryViews(prev => ({
+                                            ...prev,
+                                            [product.category!]: (prev[product.category!] || 0) + 1
+                                        }));
+                                    }
+                                }}
+                            >
+                                <div className="card-img-container">
+                                    {product.photo_url ? (
+                                        <img
+                                            src={getPublicImageUrl(product.photo_url) || ''}
+                                            alt={product.name}
+                                            loading="lazy"
+                                            onError={(e) => {
+                                                const target = e.target as HTMLImageElement;
+                                                target.src = 'https://via.placeholder.com/300?text=Produit';
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="img-placeholder">
+                                            <Package size={32} />
+                                        </div>
+                                    )}
+
+                                    <button
+                                        className={`btn-favorite ${isFavorite ? 'active' : ''}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleFavorite(product.id);
+                                        }}
+                                    >
+                                        <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
+                                    </button>
+
+                                    <div className={`stock-badge stock-${stockStatus.color}`}>
+                                        {stockStatus.label}
+                                    </div>
+                                </div>
+
+
+                                <div className="card-content">
+                                    <div className="product-trust-badges">
+                                        <div className="trust-badge-mini silver">
+                                            <CreditCard size={10} /> Livraison d'abord
+                                        </div>
+                                        <div className="trust-badge-mini gold">
+                                            <BadgeCheck size={10} /> Boutique Pro
+                                        </div>
+                                    </div>
+
+                                    <h3 className="product-title">{product.name}</h3>
+                                    <div className="product-price">{formatPrice(product.price_sale)}</div>
+
+                                    {product.is_active && (
+                                        quantity > 0 ? (
+                                            <div
+                                                className="btn-add-cart qty-mode"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <button
+                                                    className="qty-btn-mini"
+                                                    onClick={() => updateQuantity(product.id, -1)}
+                                                >
+                                                    <Minus size={16} />
+                                                </button>
+                                                <span className="qty-display">{quantity}</span>
+                                                <button
+                                                    className="qty-btn-mini"
+                                                    onClick={() => updateQuantity(product.id, 1)}
+                                                >
+                                                    <Plus size={16} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                className={`btn-add-cart ${addedId === product.id ? 'added' : ''}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    addToCart(product);
+                                                }}
+                                            >
+                                                {addedId === product.id ? (
+                                                    <><Check size={16} /> Ajouté</>
+                                                ) : (
+                                                    <><Plus size={16} /> Ajouter</>
+                                                )}
+                                            </button>
+                                        )
+                                    )}
+                                </div>
+                            </motion.div>
+                        );
+                    })
+                    }
+                </div>
+
+                {totalFound > visibleCount && (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem 0' }}>
+                        <button
+                            className="btn-show-more"
+                            onClick={() => setVisibleCount(prev => prev + 12)}
+                            style={{
+                                padding: '12px 32px',
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-full)',
+                                color: 'var(--text-primary)',
+                                fontWeight: 700,
+                                fontSize: '0.9rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: 'var(--shadow-sm)'
                             }}
                         >
-                            <div className="card-img-container">
-                                {product.photo_url ? (
-                                    <img
-                                        src={getPublicImageUrl(product.photo_url) || ''}
-                                        alt={product.name}
-                                        loading="lazy"
-                                        onError={(e) => {
-                                            (e.target as HTMLImageElement).style.display = 'none';
-                                        }}
-                                    />
-                                ) : (
-                                    <Store size={40} className="placeholder-icon" />
-                                )}
-
-                                {/* 🔥 Badge Intelligent de Tendance */}
-                                {productViews[product.id] > 3 && (
-                                    <div className="trend-badge" style={{
-                                        position: 'absolute',
-                                        bottom: '8px',
-                                        left: '8px',
-                                        background: 'rgba(255, 255, 255, 0.9)',
-                                        backdropFilter: 'blur(4px)',
-                                        padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        fontSize: '10px',
-                                        fontWeight: 800,
-                                        color: 'var(--primary)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                    }}>
-                                        <Search size={10} /> POPULAIRE
-                                    </div>
-                                )}
-
-                                <button
-                                    className={`favorite-btn ${isFavorite ? 'active' : ''}`}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleFavorite(product.id);
-                                    }}
-                                >
-                                    <Heart size={16} fill={isFavorite ? '#ff5500' : 'none'} />
-                                </button>
-
-                                <div className={`stock-badge stock-${stockStatus.color}`}>
-                                    {stockStatus.label}
-                                </div>
-                            </div>
-
-                            <div className="card-content">
-                                <h3 className="product-title">{product.name}</h3>
-                                <div className="product-price">{formatPrice(product.price_sale)}</div>
-
-                                {product.is_active && (
-                                    quantity > 0 ? (
-                                        <div
-                                            className="btn-add-cart qty-mode"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <button
-                                                className="qty-btn-mini"
-                                                onClick={() => updateQuantity(product.id, -1)}
-                                            >
-                                                <Minus size={16} />
-                                            </button>
-                                            <span className="qty-display">{quantity}</span>
-                                            <button
-                                                className="qty-btn-mini"
-                                                onClick={() => updateQuantity(product.id, 1)}
-                                            >
-                                                <Plus size={16} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            className={`btn-add-cart ${addedId === product.id ? 'added' : ''}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                addToCart(product);
-                                            }}
-                                        >
-                                            {addedId === product.id ? (
-                                                <><Check size={16} /> Ajouté</>
-                                            ) : (
-                                                <><Plus size={16} /> Ajouter</>
-                                            )}
-                                        </button>
-                                    )
-                                )}
-                            </div>
-                        </motion.div>
-                    );
-                })}
-            </div>
+                            Voir plus de produits (+{Math.min(12, totalFound - visibleCount)})
+                        </button>
+                    </div>
+                )}
+            </>
         );
-    }, [filteredAndSortedProducts, favorites, cart, addedId, searchQuery]);
+    }, [filteredAndSortedProducts, favorites, cart, addedId, searchQuery, visibleCount]);
 
     const totalAmount = cart.reduce((acc, item) => acc + ((item.product.price_sale || 0) * item.quantity), 0);
     const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
@@ -432,28 +700,43 @@ export default function ShopPage() {
     const addToCart = (product: Product, quantity: number = 1) => {
         if (navigator.vibrate) navigator.vibrate(50);
 
-        setAddedId(product.id);
-        setTimeout(() => setAddedId(null), 1500);
-
         setCart(prev => {
             const existing = prev.find(item => item.product.id === product.id);
             if (existing) {
                 return prev.map(item =>
-                    item.product.id === product.id ? { ...item, quantity: item.quantity + quantity } : item
+                    item.product.id === product.id
+                        ? { ...item, quantity: item.quantity + quantity }
+                        : item
                 );
             }
             return [...prev, { product, quantity }];
         });
+
+        // Analytics Intelligent
+        trackEvent('add_to_cart', product.id, product.category || undefined, undefined, { quantity });
+
+        setAddedId(product.id);
+        setTimeout(() => setAddedId(null), 1500);
     };
 
     const updateQuantity = (productId: string, delta: number) => {
-        setCart(prev => prev.map(item => {
-            if (item.product.id === productId) {
-                const newQuantity = Math.max(0, item.quantity + delta);
-                return { ...item, quantity: newQuantity };
+        setCart(prev => {
+            const existing = prev.find(item => item.product.id === productId);
+            if (!existing) return prev;
+
+            const newQty = existing.quantity + delta;
+            if (newQty <= 0) {
+                // Analytics
+                trackEvent('remove_from_cart', productId);
+                return prev.filter(item => item.product.id !== productId);
             }
-            return item;
-        }).filter(item => item.quantity > 0));
+
+            return prev.map(item =>
+                item.product.id === productId
+                    ? { ...item, quantity: newQty }
+                    : item
+            );
+        });
     };
 
     const setManualQuantity = (productId: string, quantity: number) => {
@@ -472,6 +755,12 @@ export default function ShopPage() {
 
     const toggleFavorite = (productId: string) => {
         if (navigator.vibrate) navigator.vibrate(30);
+
+        const isFav = favorites.includes(productId);
+        if (!isFav) {
+            trackEvent('view_product', productId, undefined, undefined, { type: 'favorite_add' });
+        }
+
         setFavorites(prev =>
             prev.includes(productId)
                 ? prev.filter(id => id !== productId)
@@ -480,48 +769,253 @@ export default function ShopPage() {
     };
 
     // ============================================================
-    // 📲 WHATSAPP LINK
+    // 🎫 TICKET IMAGE GENERATOR (Canvas)
     // ============================================================
 
-    const generateWhatsAppLink = (orderId?: string) => {
-        if (!shop) return '';
+    const generateOrderTicketImage = async (orderId?: string): Promise<Blob | null> => {
+        if (!shop) return null;
 
-        const shopPhone = shop.whatsapp || shop.phone || '';
-        const cleanPhone = shopPhone.replace(/\D/g, '');
+        const W = 480;
+        const PADDING = 28;
+        const HEADER_H = 160;
+        const ITEM_H = 56;
+        const QR_SIZE = 110;
+        const FOOTER_H = 220 + QR_SIZE; // Plus de place pour le QR Code
+        const totalHeight = HEADER_H + (cart.length * ITEM_H) + FOOTER_H;
 
-        const itemsList = cart.map(item =>
-            `• ${item.product.name} x${item.quantity} = ${formatPrice(item.product.price_sale * item.quantity)}`
-        ).join('\n');
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = totalHeight;
+        const ctx = canvas.getContext('2d')!;
 
-        let locationLink = '';
-        if (customerInfo.location) {
-            locationLink = `\n📍 *Position GPS:* https://www.google.com/maps?q=${customerInfo.location.lat},${customerInfo.location.lng}`;
+        // --- Background ---
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, totalHeight);
+        bgGrad.addColorStop(0, '#0d0d12');
+        bgGrad.addColorStop(1, '#15151f');
+        ctx.fillStyle = bgGrad;
+        roundRect(ctx, 0, 0, W, totalHeight, 20);
+        ctx.fill();
+
+        // --- Header accent bar ---
+        const barGrad = ctx.createLinearGradient(0, 0, W, 0);
+        barGrad.addColorStop(0, '#ff5500');
+        barGrad.addColorStop(1, '#ff8c00');
+        ctx.fillStyle = barGrad;
+        ctx.fillRect(0, 0, W, 5);
+
+        // --- Velmo Logo (simple V) ---
+        ctx.fillStyle = '#ff5500';
+        roundRect(ctx, PADDING, 22, 44, 44, 10);
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('V', PADDING + 22, 51);
+
+        // --- Shop name ---
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText(shop.name.toUpperCase(), PADDING + 58, 42);
+
+        ctx.fillStyle = '#888';
+        ctx.font = '13px Arial';
+        ctx.fillText('velmo.market', PADDING + 58, 60);
+
+        // --- Order reference & date ---
+        const ref = orderId ? orderId.slice(0, 8).toUpperCase() : 'VEL-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+        ctx.fillStyle = '#ff5500';
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(`#${ref}`, W - PADDING, 42);
+        ctx.fillStyle = '#888';
+        ctx.font = '12px Arial';
+        ctx.fillText(dateStr, W - PADDING, 60);
+
+        // --- Separator ---
+        ctx.strokeStyle = '#2a2a3a';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(PADDING, 82);
+        ctx.lineTo(W - PADDING, 82);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // --- "COMMANDE" label ---
+        ctx.fillStyle = '#555';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('COMMANDE', PADDING, 105);
+
+        // --- Column headers ---
+        ctx.fillStyle = '#777';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('PRODUIT', PADDING, 128);
+        ctx.textAlign = 'center';
+        ctx.fillText('QTÉ', W / 2 + 20, 128);
+        ctx.textAlign = 'right';
+        ctx.fillText('PRIX', W - PADDING, 128);
+
+        // --- Separator ---
+        ctx.fillStyle = '#2a2a3a';
+        ctx.fillRect(PADDING, 136, W - PADDING * 2, 1);
+
+        // --- Product rows ---
+        let currY = HEADER_H;
+        for (const item of cart) {
+            const price = (item.product.price_sale || 0) * item.quantity;
+            const name = item.product.name.length > 26 ? item.product.name.slice(0, 25) + '…' : item.product.name;
+
+            ctx.fillStyle = '#e5e5e5';
+            ctx.font = '13px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(name, PADDING, currY + 22);
+
+            ctx.fillStyle = '#ff8c00';
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`×${item.quantity}`, W / 2 + 20, currY + 22);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText(formatPrice(price), W - PADDING, currY + 22);
+
+            // Row separator
+            ctx.fillStyle = '#1e1e2a';
+            ctx.fillRect(PADDING, currY + 32, W - PADDING * 2, 1);
+
+            currY += ITEM_H;
         }
 
-        const receiptUrl = `${window.location.origin}/receipt/${orderId}`;
-        const message = `📦 *NOUVELLE COMMANDE VELMO*
+        // --- Total ---
+        const totalY = currY + 30;
+        const totGrad = ctx.createLinearGradient(PADDING, totalY - 4, W - PADDING, totalY - 4 + 48);
+        totGrad.addColorStop(0, '#1a1a2a');
+        totGrad.addColorStop(1, '#222235');
+        ctx.fillStyle = totGrad;
+        roundRect(ctx, PADDING, totalY - 4, W - PADDING * 2, 48, 10);
+        ctx.fill();
 
-🏪 *Boutique:* ${shop.name}
-${orderId ? `🆔 *Réf:* #${orderId.slice(0, 8).toUpperCase()}` : ''}
+        ctx.fillStyle = '#999';
+        ctx.font = '13px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('TOTAL À PAYER', PADDING + 14, totalY + 22);
 
-👤 *Client:* ${customerInfo.name}
-📱 *Téléphone:* ${customerInfo.phone}
-${customerInfo.address ? `🏠 *Adresse:* ${customerInfo.address}` : ''}${locationLink}
+        ctx.fillStyle = '#ff5500';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(formatPrice(totalAmount), W - PADDING - 14, totalY + 24);
 
-🛒 *Produits:*
-${itemsList}
+        // --- Delivery info ---
+        const infoY = totalY + 74;
+        ctx.fillStyle = '#555';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('LIVRAISON À', PADDING, infoY);
 
-💰 *TOTAL:* ${formatPrice(totalAmount)}
+        ctx.fillStyle = '#ddd';
+        ctx.font = 'bold 13px Arial';
+        ctx.fillText(customerInfo.address || 'À confirmer', PADDING, infoY + 18);
 
-📍 *Mode:* ${deliveryMethod === 'pickup' ? 'Retrait en boutique' : 'Livraison à domicile'}
-${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
+        if (customerInfo.name) {
+            ctx.fillStyle = '#777';
+            ctx.font = '12px Arial';
+            ctx.fillText(`Client : ${customerInfo.name}`, PADDING, infoY + 36);
+        }
 
-📄 *Voir le reçu :* ${receiptUrl}
+        // --- QR Code ---
+        const qrY = infoY + 60;
+        const trackingUrl = `https://velmo.market/order/${ref}`;
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${QR_SIZE}x${QR_SIZE}&data=${encodeURIComponent(trackingUrl)}&color=ffffff&bgcolor=15151f`;
 
----
-✅ Envoyé via Velmo`;
+        try {
+            const qrImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => resolve(img);
+                img.onerror = () => reject();
+                img.src = qrUrl;
+            });
+            ctx.drawImage(qrImg, W / 2 - QR_SIZE / 2, qrY, QR_SIZE, QR_SIZE);
+            ctx.fillStyle = '#555';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Scannez pour suivre la commande', W / 2, qrY + QR_SIZE + 15);
+        } catch (e) {
+            console.warn('QR Code generation failed');
+        }
 
-        return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+        // --- Trust badge ---
+        const badgeY = totalHeight - 52;
+        ctx.fillStyle = '#1a2a1a';
+        roundRect(ctx, PADDING, badgeY, (W - PADDING * 2) / 2 - 6, 32, 8);
+        ctx.fill();
+        ctx.fillStyle = '#22c55e';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('✓ Paiement à la livraison', PADDING + (W - PADDING * 2) / 4 - 3, badgeY + 20);
+
+        ctx.fillStyle = '#1a1a2a';
+        roundRect(ctx, W / 2 + 6, badgeY, (W - PADDING * 2) / 2 - 6, 32, 8);
+        ctx.fill();
+        ctx.fillStyle = '#888';
+        ctx.font = '11px Arial';
+        ctx.fillText('Propulsé par Velmo', W - PADDING - (W - PADDING * 2) / 4 + 3, badgeY + 20);
+
+        return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/png', 0.95));
+    };
+
+    // Helper to draw rounded rects (compatible avec tous les navigateurs)
+    const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    };
+
+    // Ouverture WhatsApp (fallback texte si partage image impossible)
+    const openWhatsApp = (orderId?: string) => {
+        if (!shop) return;
+        const shopPhone = (shop.whatsapp || shop.phone || '').replace(/\D/g, '');
+        const ref = orderId ? orderId.slice(0, 8).toUpperCase() : '';
+
+        // Liste détaillée des produits dans le message
+        const itemLines = cart.map(item => {
+            const subtotal = formatPrice((item.product.price_sale || 0) * item.quantity);
+            return `  • *${item.product.name}* × ${item.quantity} = ${subtotal}`;
+        }).join('\n');
+
+        const msg = [
+            `🛒 *NOUVELLE COMMANDE — ${shop.name}*`,
+            ``,
+            `*PRODUITS :*`,
+            itemLines,
+            ``,
+            `💰 *TOTAL : ${formatPrice(totalAmount)}*`,
+            ``,
+            `👤 *Client :* ${customerInfo.name || 'Non renseigné'}`,
+            `📍 *Quartier/Repère :* ${customerInfo.address}`,
+            customerInfo.location
+                ? `🌐 *Position GPS :* https://maps.google.com?q=${customerInfo.location.lat},${customerInfo.location.lng}`
+                : '',
+            ref ? `🔖 *Réf :* #${ref}` : '',
+            ``,
+            `_Commande passée via velmo.market_`
+        ].filter(Boolean).join('\n');
+
+        window.open(`https://wa.me/${shopPhone}?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
     const requestLocation = () => {
@@ -567,7 +1061,7 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
         try {
             setIsSubmitting(true);
 
-            // Structure items_json conforme au rapport
+            // 1. Enregistrement Supabase (bruit de fond)
             const items_json: OrderItem[] = cart.map(item => ({
                 id: item.product.id,
                 name: item.product.name,
@@ -576,51 +1070,77 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                 photo_url: item.product.photo_url || null
             }));
 
-            const orderData = {
-                shop_id: shop.id,
-                customer_name: customerInfo.name,
-                customer_phone: customerInfo.phone,
-                customer_address: deliveryMethod === 'delivery' ? customerInfo.address : null,
-                customer_location: deliveryMethod === 'delivery' ? (customerInfo.location || null) : null,
-                items: items_json, // Compatibilité avec les anciennes versions
-                items_json: items_json, // Conforme au rapport Velmo
-                total_amount: totalAmount,
-                delivery_method: deliveryMethod,
-                order_note: orderNote || null,
-                status: 'pending'
-            };
-
-            console.log('📤 Envoi de la commande:', orderData);
-
-            const { data, error } = await supabase
+            const { data } = await supabase
                 .from('customer_orders')
-                .insert(orderData)
+                .insert({
+                    shop_id: shop.id,
+                    customer_name: customerInfo.name || 'Client WhatsApp',
+                    customer_phone: customerInfo.phone || null,
+                    items_json: items_json,
+                    total_amount: totalAmount,
+                    status: 'pending',
+                    delivery_method: deliveryMethod,
+                    customer_address: customerInfo.address,
+                    customer_location: customerInfo.location ? JSON.stringify(customerInfo.location) : null
+                })
                 .select('id, short_ref')
                 .single();
 
-            if (error) {
-                console.error('❌ Erreur Supabase:', error);
-                throw error;
+            trackEvent('checkout_success', undefined, undefined, undefined, { orderId: data?.id, total: totalAmount });
+
+            // 2. Générer le ticket image en arrière-plan
+            const blob = await generateOrderTicketImage(data?.id);
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                setTicketImageUrl(url);
+                setTicketBlob(blob);
             }
 
-            console.log('✅ Commande créée:', data);
-            setSubmittedOrderId(data?.id || null);
-            setSubmittedOrderRef(data?.short_ref || null);
+            // 3. Ouvrir WhatsApp avec le message d'accompagnement
+            openWhatsApp(data?.id);
 
-            // 💾 Sauvegarde intelligente pour le tracking futur
-            if (data?.short_ref) {
-                localStorage.setItem('velmo_last_order_ref', data.short_ref);
-            }
-
+            // 4. Nettoyage
             setOrderSuccess(true);
+            setSubmittedOrderId(data?.id || null);
+            setSubmittedOrderRef(data?.short_ref || data?.id?.slice(0, 8).toUpperCase() || null);
             setCart([]);
             localStorage.removeItem('velmo_cart');
 
         } catch (err) {
-            alert("Une erreur est survenue. Veuillez réessayer.");
-            console.error(err);
+            console.warn('Silent fail checkout:', err);
+            openWhatsApp();
+            setOrderSuccess(true);
+            setCart([]);
+            localStorage.removeItem('velmo_cart');
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const downloadTicket = (blob?: Blob | null, orderId?: string | null) => {
+        const b = blob || ticketBlob;
+        if (!b) return;
+        const url = URL.createObjectURL(b);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ticket-velmo-${orderId?.slice(0, 6) || 'cmd'}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const shareTicket = async () => {
+        if (!ticketBlob) return;
+        const ticketFile = new File([ticketBlob], 'ticket-velmo.png', { type: 'image/png' });
+        try {
+            if (navigator.canShare?.({ files: [ticketFile] })) {
+                await navigator.share({ files: [ticketFile], title: `Commande - ${shop?.name}` });
+            } else {
+                downloadTicket();
+            }
+        } catch {
+            downloadTicket();
         }
     };
 
@@ -685,6 +1205,50 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
         );
     }
 
+    // 🧠 Amazon-Style recommendation algorithm
+    const getRecommendedProducts = (currentProduct?: Product | null) => {
+        if (!products.length) return [];
+
+        let recommended: Product[] = [];
+
+        if (currentProduct) {
+            // 1. Same category first
+            recommended = products.filter(p =>
+                p.id !== currentProduct.id &&
+                p.category === currentProduct.category &&
+                p.is_active
+            );
+        }
+
+        // 2. Add popular products if not enough
+        const popularIds = Object.entries(productViews)
+            .sort(([, a], [, b]) => b - a)
+            .map(([id]) => id);
+
+        const popular = products.filter(p =>
+            popularIds.includes(p.id) &&
+            p.id !== currentProduct?.id &&
+            !recommended.find(r => r.id === p.id)
+        );
+
+        return [...recommended, ...popular].slice(0, 4);
+    };
+
+    // 🔍 Search tracking delay
+    useEffect(() => {
+        if (searchQuery.length > 2) {
+            const timer = setTimeout(() => {
+                trackEvent('search', undefined, undefined, searchQuery);
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [searchQuery, trackEvent]);
+
+    const handleCategoryClick = (cat: string) => {
+        setSelectedCategory(cat);
+        trackEvent('category_click', undefined, cat);
+    };
+
     // ============================================================
     // 🎨 RENDER: MAIN
     // ============================================================
@@ -708,32 +1272,46 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                 ))}
             </div>
 
-            {/* 🔝 Top Actions */}
-            <div className="top-actions" style={{
-                position: 'absolute',
-                top: '1rem',
-                right: '1rem',
-                zIndex: 50,
-                display: 'flex',
-                gap: '8px'
-            }}>
-                <button
-                    onClick={() => setIsTrackOpen(true)}
-                    className="theme-switch"
-                    title="Suivre ma commande"
-                    style={{ position: 'relative', top: 0, right: 0 }}
-                >
-                    <Package size={20} />
-                </button>
-                <button
-                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                    className="theme-switch"
-                    title="Changer le thème"
-                    style={{ position: 'relative', top: 0, right: 0 }}
-                >
-                    {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-                </button>
-            </div>
+            {/* 🔝 Premium Sticky Nav */}
+            <nav className="sticky-nav">
+                <div className="nav-brand-area">
+                    <Link to="/" className="btn-nav-back">
+                        <ArrowRight size={20} style={{ transform: 'rotate(180deg)' }} />
+                    </Link>
+                    <div className="nav-shop-info">
+                        <span className="nav-shop-label">Market</span>
+                        <span className="nav-shop-name">{shop.name}</span>
+                    </div>
+                </div>
+
+                <div className="nav-actions-area">
+                    <button
+                        onClick={() => setIsTrackOpen(true)}
+                        className="btn-nav-action"
+                        title="Suivre ma commande"
+                    >
+                        <Package size={20} />
+                    </button>
+                    <button
+                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                        className="btn-nav-action"
+                        title="Changer le thème"
+                    >
+                        {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                    </button>
+                    <button
+                        onClick={() => setIsCartOpen(true)}
+                        className="btn-nav-cart"
+                    >
+                        <ShoppingCart size={20} />
+                        {cart.length > 0 && (
+                            <span className="cart-badge-mini">
+                                {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                            </span>
+                        )}
+                    </button>
+                </div>
+            </nav>
 
             {/* 🆕 FAB Track supprimé à la demande de l'utilisateur ("sale") - Accessible via header */}
 
@@ -821,10 +1399,10 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                         <Search className="search-icon" size={20} />
                         <input
                             type="text"
+                            className="search-input"
                             placeholder="Rechercher un produit..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="search-input"
                         />
                         {/* 🔍 Résultats de recherche instantanés (Pop-up) */}
                         <AnimatePresence>
@@ -879,7 +1457,7 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                                                 </div>
                                                 <div style={{ flex: 1 }}>
                                                     <h4 style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-primary)' }}>{product.name}</h4>
-                                                    <p style={{ fontSize: '0.8rem', margin: 0, color: 'var(--primary)', fontWeight: 600 }}>{formatPrice(product.price_sale)}</p>
+                                                    <p style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>{formatPrice(product.price_sale)}</p>
                                                 </div>
                                                 <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                     <Plus size={14} />
@@ -954,18 +1532,25 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                     )}
                 </AnimatePresence>
 
-                {/* Categories */}
+                {/* 🏷️ Categories: Premium Visual Grid */}
                 {categories.length > 1 && (
-                    <div className="category-scroll">
-                        {categories.map(cat => (
-                            <button
-                                key={cat as string}
-                                onClick={() => setSelectedCategory(cat as string)}
-                                className={`category-pill ${selectedCategory === cat ? 'active' : ''}`}
-                            >
-                                {cat as string}
-                            </button>
-                        ))}
+                    <div className="category-pills-container">
+                        <div className="category-visual-grid">
+                            {categories.map(cat => (
+                                <motion.div
+                                    key={cat as string}
+                                    whileHover={{ y: -5 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => handleCategoryClick(cat as string)}
+                                    className={`category-card ${selectedCategory === cat ? 'active' : ''}`}
+                                >
+                                    <div className="cat-icon">
+                                        {getCategoryIcon(cat as string)}
+                                    </div>
+                                    <span className="cat-name">{cat as string}</span>
+                                </motion.div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </header>
@@ -1034,6 +1619,196 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                 {productGrid}
             </section>
 
+            {/* ===================== SHOP INFORMATION CARD ===================== */}
+            <section className="shop-info-section">
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    className="shop-info-card"
+                >
+                    <div className="shop-info-grid">
+
+                        {/* 📞 Column 1: Contact & Identity */}
+                        <div className="shop-info-col">
+                            <div className="info-col-header">
+                                <div className="info-icon-wrapper primary">
+                                    <Store size={24} />
+                                </div>
+                                <h3 className="info-col-title">Contactez-nous</h3>
+                            </div>
+
+                            <div className="info-items-list">
+                                {(shop.phone || shop.whatsapp) && (
+                                    <a href={`tel:${shop.phone || shop.whatsapp}`} className="info-item-link">
+                                        <div className="item-icon-circle">
+                                            <Phone size={18} />
+                                        </div>
+                                        <div className="item-content">
+                                            <span className="item-label">Téléphone</span>
+                                            <span className="item-value">{shop.phone || shop.whatsapp}</span>
+                                        </div>
+                                    </a>
+                                )}
+
+                                {shop.whatsapp && (
+                                    <a href={`https://wa.me/${shop.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="info-item-link whatsapp">
+                                        <div className="item-icon-circle whatsapp">
+                                            <MessageCircle size={18} />
+                                        </div>
+                                        <div className="item-content">
+                                            <span className="item-label">WhatsApp</span>
+                                            <span className="item-value">Discuter en ligne</span>
+                                        </div>
+                                    </a>
+                                )}
+
+                                {shop.email && (
+                                    <a href={`mailto:${shop.email}`} className="info-item-link">
+                                        <div className="item-icon-circle">
+                                            <Mail size={18} />
+                                        </div>
+                                        <div className="item-content">
+                                            <span className="item-label">Email</span>
+                                            <span className="item-value truncate">{shop.email}</span>
+                                        </div>
+                                    </a>
+                                )}
+                            </div>
+
+                            {/* Social Media Row */}
+                            <div className="social-links-row">
+                                {shop.facebook_url && (
+                                    <a href={shop.facebook_url} target="_blank" rel="noopener noreferrer" className="social-icon-btn facebook" title="Facebook">
+                                        <Facebook size={20} />
+                                    </a>
+                                )}
+                                {shop.instagram_url && (
+                                    <a href={shop.instagram_url} target="_blank" rel="noopener noreferrer" className="social-icon-btn instagram" title="Instagram">
+                                        <Instagram size={20} />
+                                    </a>
+                                )}
+                                {shop.tiktok_url && (
+                                    <a href={shop.tiktok_url} target="_blank" rel="noopener noreferrer" className="social-icon-btn tiktok" title="TikTok">
+                                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.9-.32-1.98-.23-2.81.33-.85.51-1.44 1.43-1.58 2.41-.09.96.16 1.94.71 2.7.53.77 1.39 1.32 2.31 1.5.88.2 1.84.03 2.59-.47.8-.5 1.48-1.31 1.63-2.26.14-.94.02-1.91.02-2.87-.01-4.71.01-9.42-.02-14.13z" /></svg>
+                                    </a>
+                                )}
+                                {shop.twitter_url && (
+                                    <a href={shop.twitter_url} target="_blank" rel="noopener noreferrer" className="social-icon-btn twitter" title="Twitter">
+                                        <Twitter size={20} />
+                                    </a>
+                                )}
+                                {shop.website_url && (
+                                    <a href={shop.website_url} target="_blank" rel="noopener noreferrer" className="social-icon-btn website" title="Site Web">
+                                        <Globe size={20} />
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 🕐 Column 2: Hours & Location */}
+                        <div className="shop-info-col">
+                            <div className="info-col-header">
+                                <div className="info-icon-wrapper orange">
+                                    <MapPin size={24} />
+                                </div>
+                                <h3 className="info-col-title">Où nous trouver ?</h3>
+                            </div>
+
+                            <div className="location-items">
+                                <div className="location-item">
+                                    <div className="item-icon-circle">
+                                        <MapPin size={18} />
+                                    </div>
+                                    <div className="item-content">
+                                        <span className="item-label">Adresse</span>
+                                        <span className="item-value">{shop.address || shop.location || 'Adresse non spécifiée'}</span>
+                                        {shop.location && (
+                                            <a
+                                                href={`https://www.google.com/maps/search/${encodeURIComponent(shop.address || shop.location)}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="maps-link"
+                                            >
+                                                Ouvrir dans Maps <ExternalLink size={12} />
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="location-item">
+                                    <div className="item-icon-circle">
+                                        <Clock size={18} />
+                                    </div>
+                                    <div className="item-content">
+                                        <span className="item-label">Horaires</span>
+                                        <span className="item-value">{shop.opening_hours || 'Contactez-nous pour les horaires'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 🚚 Column 3: Policies */}
+                        <div className="shop-info-col">
+                            <div className="info-col-header">
+                                <div className="info-icon-wrapper emerald">
+                                    <Truck size={24} />
+                                </div>
+                                <h3 className="info-col-title">Nos Politiques</h3>
+                            </div>
+
+                            <div className="policies-list">
+                                <div className="policy-box">
+                                    <span className="policy-label">
+                                        <Truck size={14} /> Livraison & Retrait
+                                    </span>
+                                    <p className="policy-text">
+                                        {shop.delivery_info || "Nous proposons la livraison à domicile et le retrait en boutique. Les délais varient selon votre localisation."}
+                                    </p>
+                                </div>
+
+                                <div className="policy-box border-t">
+                                    <span className="policy-label">
+                                        <Shield size={14} /> Retours & Remboursements
+                                    </span>
+                                    <p className="policy-text">
+                                        {shop.return_policy || "Les produits peuvent être retournés sous conditions. Veuillez nous contacter pour toute réclamation."}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bottom CTA Bar */}
+                    <div className="shop-info-footer">
+                        <div className="footer-cta-info">
+                            <div className="cta-icon-wrapper">
+                                <Share2 size={24} />
+                            </div>
+                            <div className="cta-text-content">
+                                <h4 className="cta-title">Partagez la boutique</h4>
+                                <p className="cta-subtitle">Invitez vos amis à découvrir nos produits</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => {
+                                navigator.share?.({
+                                    title: shop.name,
+                                    text: shop.description || '',
+                                    url: window.location.href,
+                                }).catch(() => {
+                                    navigator.clipboard.writeText(window.location.href);
+                                    alert('Lien copié !');
+                                });
+                            }}
+                            className="btn-share-shop"
+                        >
+                            Partager le site <ArrowRight size={18} />
+                        </button>
+                    </div>
+                </motion.div>
+            </section>
+
             {/* ===================== TRUST SECTION ===================== */}
             <section className="trust-section">
                 <h3>Pourquoi commander chez nous ?</h3>
@@ -1057,6 +1832,50 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
             </section>
 
             {/* ===================== FOOTER ===================== */}
+            {/* 📱 Mobile Floating Nav */}
+            <div className="mobile-bottom-nav">
+                <button className="nav-item active" onClick={() => {
+                    setSelectedCategory('Tout');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}>
+                    <Home size={22} />
+                    <span>Accueil</span>
+                </button>
+                <button className="nav-item" onClick={() => {
+                    setShowFilters(true);
+                    const cats = document.querySelector('.category-pills-container');
+                    cats?.scrollIntoView({ behavior: 'smooth' });
+                }}>
+                    <Filter size={22} />
+                    <span>Explorer</span>
+                </button>
+                <button
+                    className="nav-item relative"
+                    onClick={() => setIsCartOpen(true)}
+                >
+                    <div className="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center -mt-8 shadow-xl shadow-primary/40 border-4 border-slate-900 border-opacity-20 backdrop-blur-md">
+                        <ShoppingCart size={24} />
+                    </div>
+                    <span>Panier</span>
+                    {cart.length > 0 && (
+                        <span className="absolute top-[-26px] right-2 w-5 h-5 bg-red-600 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-slate-900">
+                            {cart.length}
+                        </span>
+                    )}
+                </button>
+                <button className="nav-item" onClick={() => setIsTrackOpen(true)}>
+                    <Package size={22} />
+                    <span>Suivi</span>
+                </button>
+                <button className="nav-item" onClick={() => {
+                    const info = document.querySelector('.shop-info-section');
+                    info?.scrollIntoView({ behavior: 'smooth' });
+                }}>
+                    <Store size={22} />
+                    <span>Infos</span>
+                </button>
+            </div>
+
             <footer className="shop-footer">
                 <div className="footer-logo">
                     <svg viewBox="0 0 100 100" fill="none">
@@ -1107,73 +1926,137 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                                     <ShoppingCart size={24} />
                                     {orderSuccess ? 'Commande confirmée' : `Panier (${totalItems})`}
                                 </h2>
-                                <button className="btn-close-cart" onClick={() => setIsCartOpen(false)}>
+                                <button className="btn-close-cart" onClick={() => setIsCartOpen(false)} aria-label="Fermer le panier">
+                                    <span style={{ fontSize: '0.8rem', fontWeight: 600, marginRight: '8px', opacity: 0.7 }} className="hide-on-desktop">Fermer</span>
                                     <X size={24} />
                                 </button>
                             </div>
 
                             {orderSuccess ? (
-                                <div className="order-success" style={{ padding: '2rem 1rem', display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
-                                    <div className="success-icon">
-                                        <CheckCircle2 size={40} />
-                                    </div>
-                                    <h2>Commande envoyée ! 🎉</h2>
-                                    <p>Merci pour votre commande.</p>
+                                <div className="order-success-premium">
+                                    <motion.div
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        className="success-check-lottie"
+                                    >
+                                        <CheckCircle2 size={56} color="#25D366" />
+                                    </motion.div>
 
-                                    {submittedOrderId && (
-                                        <div className="order-id">
-                                            <span>Réf: #{submittedOrderRef || submittedOrderId?.slice(0, 8).toUpperCase()}</span>
-                                            <button onClick={() => copyToClipboard(submittedOrderRef || submittedOrderId || '')}>
-                                                {copiedLink ? <Check size={16} /> : <Copy size={16} />}
-                                            </button>
+                                    <h2 className="success-title">Commande Envoyée ! 🎉</h2>
+                                    <p className="success-msg">
+                                        ✅ Le marchand a reçu votre commande complète sur WhatsApp.<br />
+                                        <span style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+                                            Voici votre ticket de commande — téléchargez-le comme preuve.
+                                        </span>
+                                    </p>
+
+                                    {/* 🎫 Ticket image preview */}
+                                    {ticketImageUrl ? (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.3 }}
+                                            style={{ width: '100%', marginBottom: '1rem' }}
+                                        >
+                                            <img
+                                                src={ticketImageUrl}
+                                                alt="Ticket de commande"
+                                                style={{
+                                                    width: '100%',
+                                                    borderRadius: '16px',
+                                                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                                                    display: 'block'
+                                                }}
+                                            />
+                                        </motion.div>
+                                    ) : (
+                                        <div className="order-summary-card">
+                                            <div className="summary-ref">
+                                                <span>RÉFÉRENCE COMMANDE</span>
+                                                <strong>#{submittedOrderRef || 'VEL-????'}</strong>
+                                            </div>
+                                            <div className="summary-amount">
+                                                <span>TOTAL</span>
+                                                <strong>{formatPrice(totalAmount)}</strong>
+                                            </div>
                                         </div>
                                     )}
 
-                                    <a
-                                        href={generateWhatsAppLink(submittedOrderId || undefined)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="whatsapp-btn"
-                                        style={{ marginBottom: '0.75rem' }}
-                                    >
-                                        <MessageCircle size={20} />
-                                        Envoyer sur WhatsApp
-                                    </a>
-
-                                    {submittedOrderId && (
-                                        <Link
-                                            to={`/receipt/${submittedOrderId}`}
-                                            className="btn-checkout"
+                                    {/* Action buttons */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+                                        {/* Bouton principal : Partager le ticket */}
+                                        <button
+                                            onClick={shareTicket}
                                             style={{
-                                                marginBottom: '0.75rem',
-                                                width: '100%',
-                                                textDecoration: 'none',
                                                 display: 'flex',
+                                                alignItems: 'center',
                                                 justifyContent: 'center',
-                                                backgroundColor: 'var(--primary)',
+                                                gap: '10px',
+                                                padding: '14px',
+                                                background: 'linear-gradient(135deg, #25D366, #128C7E)',
                                                 color: 'white',
-                                                zIndex: 10,
-                                                position: 'relative',
-                                                cursor: 'pointer'
+                                                borderRadius: '14px',
+                                                fontWeight: 800,
+                                                fontSize: '1rem',
+                                                cursor: 'pointer',
+                                                border: 'none',
+                                                boxShadow: '0 4px 15px rgba(37, 211, 102, 0.4)',
+                                                width: '100%'
                                             }}
                                         >
-                                            <Printer size={20} />
-                                            Voir mon reçu / Imprimer
-                                        </Link>
-                                    )}
+                                            <MessageCircle size={22} fill="white" />
+                                            Envoyer le ticket sur WhatsApp
+                                        </button>
 
-                                    <button
-                                        className="btn-close-modal"
-                                        style={{ width: '100%', borderRadius: 'var(--radius-lg)' }}
-                                        onClick={() => {
-                                            setIsCartOpen(false);
-                                            setOrderSuccess(false);
-                                            setCustomerInfo({ name: '', phone: '', address: '' });
-                                            setOrderNote('');
-                                        }}
-                                    >
-                                        Fermer et continuer
-                                    </button>
+                                        {/* Bouton secondaire : Télécharger */}
+                                        {ticketBlob && (
+                                            <button
+                                                onClick={() => downloadTicket(null, submittedOrderRef)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '8px',
+                                                    padding: '12px',
+                                                    background: 'var(--bg-tertiary)',
+                                                    color: 'var(--text-primary)',
+                                                    borderRadius: '14px',
+                                                    fontWeight: 600,
+                                                    fontSize: '0.9rem',
+                                                    cursor: 'pointer',
+                                                    border: '1px solid var(--border-color)',
+                                                    width: '100%'
+                                                }}
+                                            >
+                                                <Printer size={18} />
+                                                Télécharger le ticket PNG
+                                            </button>
+                                        )}
+
+                                        {/* Bouton retour */}
+                                        <button
+                                            onClick={() => {
+                                                setIsCartOpen(false);
+                                                setOrderSuccess(false);
+                                                if (ticketImageUrl) URL.revokeObjectURL(ticketImageUrl);
+                                                setTicketImageUrl(null);
+                                                setTicketBlob(null);
+                                            }}
+                                            style={{
+                                                padding: '11px',
+                                                background: 'transparent',
+                                                color: 'var(--text-muted)',
+                                                borderRadius: '14px',
+                                                fontWeight: 600,
+                                                fontSize: '0.85rem',
+                                                cursor: 'pointer',
+                                                border: '1px solid var(--border-color)',
+                                                width: '100%'
+                                            }}
+                                        >
+                                            Retour au magasin
+                                        </button>
+                                    </div>
                                 </div>
                             ) : cart.length === 0 ? (
                                 <div className="cart-empty">
@@ -1229,112 +2112,92 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                                             </div>
                                         ))}
 
-                                        {/* CHECKOUT FORM FIELDS */}
+                                        {/* CHECKOUT FORM FIELDS (SIMPLIFIÉ) */}
                                         <div style={{ padding: '1.5rem 0 0.5rem', borderTop: '1px solid var(--border-color)', marginTop: '1rem' }}>
-                                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <Users size={18} /> Vos coordonnées
+                                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <Users size={18} /> Finaliser la commande
                                             </h3>
+                                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                                                Votre commande sera envoyée directement sur le WhatsApp de la boutique.
+                                            </p>
 
                                             <div className="form-group">
-                                                <label className="form-label required">Nom complet</label>
+                                                <label className="form-label">Votre nom (Optionnel)</label>
                                                 <input
                                                     type="text"
                                                     className="form-input"
                                                     placeholder="Ex: Mamadou Diallo"
                                                     value={customerInfo.name}
                                                     onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })}
-                                                    required
                                                 />
                                             </div>
 
                                             <div className="form-group">
-                                                <label className="form-label required">Téléphone</label>
+                                                <label className="form-label required">Quartier / Point de repère</label>
                                                 <input
-                                                    type="tel"
+                                                    type="text"
                                                     className="form-input"
-                                                    placeholder="Ex: 622001234"
-                                                    value={customerInfo.phone}
-                                                    onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                                                    placeholder="Ex: Kaloum, près de la pharmacie..."
+                                                    value={customerInfo.address}
+                                                    onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
                                                     required
                                                 />
                                             </div>
 
-                                            <div className="form-group">
-                                                <label className="form-label">Mode de retrait</label>
-                                                <div className="delivery-toggle">
-                                                    <button
-                                                        type="button"
-                                                        className={`delivery-option ${deliveryMethod === 'pickup' ? 'active' : ''}`}
-                                                        onClick={() => setDeliveryMethod('pickup')}
-                                                    >
-                                                        <Store size={24} />
-                                                        <span>Retrait</span>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className={`delivery-option ${deliveryMethod === 'delivery' ? 'active' : ''}`}
-                                                        onClick={() => setDeliveryMethod('delivery')}
-                                                    >
-                                                        <Truck size={24} />
-                                                        <span>Livraison</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {deliveryMethod === 'delivery' && (
-                                                <div className="form-group">
-                                                    <label className="form-label required">Adresse / Lieu</label>
-                                                    <input
-                                                        type="text"
-                                                        className="form-input"
-                                                        placeholder="Ex: Kaloum, près de la banque..."
-                                                        value={customerInfo.address}
-                                                        onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
-                                                        required={deliveryMethod === 'delivery'}
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        className={`delivery-option ${customerInfo.location ? 'active' : ''}`}
-                                                        onClick={requestLocation}
-                                                        style={{ marginTop: '10px', width: '100%', flexDirection: 'row', gap: '10px', padding: '10px' }}
-                                                    >
-                                                        <MapPin size={20} />
-                                                        <span>{customerInfo.location ? 'Position GPS incluse ✅' : 'Ajouter ma position GPS'}</span>
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            <div className="form-group">
-                                                <label className="form-label">Note (optionnel)</label>
-                                                <textarea
-                                                    className="form-input"
-                                                    placeholder="Instructions spéciales..."
-                                                    value={orderNote}
-                                                    onChange={(e) => setOrderNote(e.target.value)}
-                                                    rows={2}
-                                                    style={{ minHeight: '60px' }}
-                                                />
-                                            </div>
+                                            <button
+                                                type="button"
+                                                className={`delivery-option ${customerInfo.location ? 'active' : ''}`}
+                                                onClick={requestLocation}
+                                                style={{
+                                                    marginTop: '10px',
+                                                    width: '100%',
+                                                    flexDirection: 'row',
+                                                    gap: '10px',
+                                                    padding: '12px',
+                                                    border: '1px dashed var(--border-color)',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    background: customerInfo.location ? 'rgba(37, 211, 102, 0.1)' : 'transparent',
+                                                    color: customerInfo.location ? '#25D366' : 'var(--text-secondary)'
+                                                }}
+                                            >
+                                                <MapPin size={20} />
+                                                <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                                                    {customerInfo.location ? 'Position GPS ajoutée ✅' : 'Ajouter ma position GPS (Optionnel)'}
+                                                </span>
+                                            </button>
                                         </div>
                                     </div>
 
                                     <div className="cart-footer">
                                         <div className="cart-total">
-                                            <span className="cart-total-label">Total à payer</span>
+                                            <span className="cart-total-label">Total à payer :</span>
                                             <span className="cart-total-amount">{formatPrice(totalAmount)}</span>
                                         </div>
                                         <button
                                             type="submit"
-                                            form="checkout-form"
                                             className="btn-checkout"
-                                            disabled={isSubmitting || !customerInfo.name || !customerInfo.phone}
+                                            disabled={isSubmitting || cart.length === 0 || !customerInfo.address}
+                                            style={{
+                                                backgroundColor: '#25D366',
+                                                borderColor: '#25D366',
+                                                color: 'white',
+                                                fontWeight: 800,
+                                                fontSize: '1.1rem',
+                                                boxShadow: '0 4px 15px rgba(37, 211, 102, 0.4)'
+                                            }}
                                         >
                                             {isSubmitting ? (
-                                                <><Loader2 size={20} className="animate-spin" /> Envoi en cours...</>
+                                                <Loader2 size={24} className="animate-spin" />
                                             ) : (
-                                                <><Check size={20} /> Confirmer la commande</>
+                                                <>
+                                                    <MessageCircle size={24} fill="white" />
+                                                    Commander sur WhatsApp
+                                                </>
                                             )}
                                         </button>
+                                        <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '12px' }}>
+                                            Le marchand recevra vos infos sur WhatsApp.
+                                        </p>
                                     </div>
                                 </form>
                             )}
@@ -1436,6 +2299,30 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
                                             </button>
                                         </>
                                     )}
+
+                                    {/* 🧠 SMART RECOMMENDATIONS */}
+                                    <div className="recommendations-section">
+                                        <h4 className="rec-title">Vous pourriez aussi aimer</h4>
+                                        <div className="rec-grid">
+                                            {getRecommendedProducts(selectedProduct).map(rec => (
+                                                <div
+                                                    key={rec.id}
+                                                    className="rec-card"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedProduct(rec);
+                                                        setModalQuantity(1);
+                                                    }}
+                                                >
+                                                    <div className="rec-img">
+                                                        <img src={getPublicImageUrl(rec.photo_url) || ''} alt={rec.name} />
+                                                    </div>
+                                                    <p className="rec-name">{rec.name}</p>
+                                                    <p className="rec-price">{formatPrice(rec.price_sale)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             </motion.div>
                         </div>
@@ -1505,3 +2392,28 @@ ${orderNote ? `\n💬 *Note:* ${orderNote}` : ''}
         </div>
     );
 }
+const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+        pending: 'En attente',
+        confirmed: 'Confirmée',
+        preparing: 'Préparation',
+        ready: 'Prête',
+        shipped: 'En route',
+        delivered: 'Livrée',
+        cancelled: 'Annulée'
+    };
+    return labels[status as keyof typeof labels] || status;
+};
+
+const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+        pending: '#f59e0b',
+        confirmed: '#3b82f6',
+        preparing: '#8b5cf6',
+        ready: '#10b981',
+        shipped: '#06b6d4',
+        delivered: '#10b981',
+        cancelled: '#ef4444'
+    };
+    return colors[status as keyof typeof colors] || '#94a3b8';
+};

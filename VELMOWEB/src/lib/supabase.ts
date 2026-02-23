@@ -139,3 +139,16 @@ export interface CustomerOrder {
   confirmed_at?: string | null;
   delivered_at?: string | null;
 }
+
+export interface ShopEvent {
+  id?: string;
+  shop_id: string;
+  session_id: string;
+  event_type: 'visit' | 'view_product' | 'add_to_cart' | 'search' | 'category_click' | 'checkout_start' | 'checkout_success';
+  product_id?: string;
+  category?: string;
+  search_query?: string;
+  metadata?: any;
+  created_at?: string;
+}
+
